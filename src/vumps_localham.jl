@@ -414,7 +414,7 @@ function tdvp_iteration_sequential(
     end
 
     𝕙ᴸ = left_environment_cell(ψ, ψ̃, hᴸ)
-    Hᴸ = left_environment(hᴸ, 𝕙ᴸ, ψ; tol=krylov_tol)
+    Hᴸ = left_environment(hᴸ, 𝕙ᴸ, ψ; tol=solver_tol)
 
     # TODO Promote full function
     function right_environment_cell(ψ, ψ̃, hᴿ)
