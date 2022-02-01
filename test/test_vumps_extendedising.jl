@@ -61,7 +61,7 @@ using Random
     return (noprime(ψ.AL[n] * ψ.C[n] * op(o, s[n])) * dag(ψ.AL[n] * ψ.C[n]))[]
   end
 
-  function ITensors.expect(ψ::InfiniteCanonicalMPS, h::ITensor)
+  function ITensors.expect(ψ::InfiniteCanonicalMPS, h::MPO)
     l = linkinds(ITensorInfiniteMPS.only, ψ.AL)
     r = linkinds(ITensorInfiniteMPS.only, ψ.AR)
     s = siteinds(ITensorInfiniteMPS.only, ψ)
@@ -70,13 +70,13 @@ using Random
     δʳ(n) = ITensorInfiniteMPS.δ(dag(r[n]), prime(r[n]))
     ψ′ = prime(dag(ψ))
 
-    ns = sort(ITensorInfiniteMPS.findsites(ψ, h))
+    ns = ITensorInfiniteMPS.findsites(ψ, h)
     nrange = ns[end] - ns[1] + 1
     idx = 2
-    temp_O = δˡ(ns[1] - 1) * ψ.AL[ns[1]] * h * ψ′.AL[ns[1]]
+    temp_O = δˡ(ns[1] - 1) * ψ.AL[ns[1]] * ψ′.AL[ns[1]] * h[1]
     for n in (ns[1] + 1):(ns[1] + nrange - 1)
       if n == ns[idx]
-        temp_O = temp_O * ψ.AL[n] * ψ′.AL[n]
+        temp_O = temp_O * ψ.AL[n] * ψ′.AL[n] * h[idx]
         idx += 1
       else
         temp_O = temp_O * ψ.AL[n] * δˢ(n) * ψ′.AL[n]
@@ -87,18 +87,16 @@ using Random
   end
 
   function ITensors.expect(ψ::InfiniteCanonicalMPS, h::InfiniteITensorSum)
-    return [expect(ψ, h[(j, j + 1)]) for j in 1:nsites(ψ)]
+    return [expect(ψ, h[j]) for j in 1:nsites(ψ)]
   end
 
   function energy(ψ, h, n)
     ϕ = ψ[n] * ψ[n + 1] * ψ[n + 2]
-    return (noprime(ϕ * h) * dag(ϕ))[]
+    return (noprime(ϕ * h ) * dag(ϕ))[]
   end
 
   nfinite = Nfinite ÷ 2
-  hnfinite = ITensor(
-    model, sfinite[nfinite], sfinite[nfinite + 1], sfinite[nfinite + 2]; model_kwargs...
-  )
+  hnfinite = ITensor(model, sfinite[nfinite], sfinite[nfinite + 1], sfinite[nfinite + 2]; model_kwargs...)
   orthogonalize!(ψfinite, nfinite)
   energy_finite = energy(ψfinite, hnfinite, nfinite)
 

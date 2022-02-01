@@ -31,7 +31,9 @@ model = Model("ising");
 H = InfiniteITensorSum(model, s; J=J, h=h);
 #to test the case where the range is larger than the unit cell size
 for x in 1:N
-  H.data[x] = H.data[x] * delta(prime(s[x + 3]), dag(s[x + 3]))
+  temp = MPO(3); temp[1] = H[x][1]; temp[2] = H[x][2]
+  temp[3] = delta(prime(s[x + 3]), dag(s[x + 3]))
+  H.data[x] = temp
 end
 
 @show norm(contract(ψ.AL[1:N]..., ψ.C[N]) - contract(ψ.C[0], ψ.AR[1:N]...));

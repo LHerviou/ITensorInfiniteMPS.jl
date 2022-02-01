@@ -75,8 +75,8 @@ using Random
   orthogonalize!(ψfinite, nfinite + 1)
   energy2_finite = energy(ψfinite[nfinite + 1], ψfinite[nfinite + 2], hnfinite2)
 
-  energy1_infinite = energy(ψ.AL[1], ψ.AL[2] * ψ.C[2], H[(1, 2)])
-  energy2_infinite = energy(ψ.AL[2], ψ.AL[3] * ψ.C[3], H[(2, 3)])
+  energy1_infinite = energy(ψ.AL[1], ψ.AL[2] * ψ.C[2], prod(H[(1, 2)]))
+  energy2_infinite = energy(ψ.AL[2], ψ.AL[3] * ψ.C[3], prod(H[(2, 3)]))
 
   orthogonalize!(ψfinite, nfinite)
   Sz1_finite = expect(ψfinite[nfinite], "Sz")
@@ -103,7 +103,7 @@ end
 ##     space = (("SzParity", 1, 2) => χ ÷ 2) ⊕ (("SzParity", 0, 2) => χ ÷ 2)
 ##     ψ = InfiniteMPS(ComplexF64, s; space=space)
 ##     randn!.(ψ)
-## 
+##
 ##     ψ = orthogonalize(ψ, :)
 ##     @test prod(ψ.AL[1:N]) * ψ.C[N] ≈ ψ.C[0] * prod(ψ.AR[1:N])
 ##   end
