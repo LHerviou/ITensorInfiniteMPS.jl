@@ -45,26 +45,31 @@ function Base.:*(H::Hᶜ, v::ITensor)
   Hᶜᴿv = v * δˡ(n) * Hᴿ[n]
   #We now start building terms where C overlap with the local Hamiltonian
   # We start with the tensor AL[n] - v - AR[n+1] ... AR[n + range_∑h - 1]
-  Hᶜʰv = v * ψ.AL[n] * δˡ(n - 1) * ψ′.AL[n] * ∑h[(n, n + 1)] #left extremity
-  common_sites = findsites(ψ, ∑h[(n, n + 1)])
+  Hᶜʰv = v * ψ.AL[n] * δˡ(n - 1) * ψ′.AL[n] * ∑h[n][1] #left extremity
+  common_sites = findsites(ψ, ∑h[n])
   idx = 2 #list the sites Σh, we start at 2 because n is already taken into account
   for k in 1:(range_∑h - 2)
     if n + k == common_sites[idx]
-      Hᶜʰv = Hᶜʰv * ψ.AR[n + k] * ψ′.AR[n + k]
+      Hᶜʰv = Hᶜʰv * ψ.AR[n + k] * ψ′.AR[n + k] * ∑h[n][idx]
       idx += 1
     else
       Hᶜʰv = Hᶜʰv * ψ.AR[n + k] * ψ′.AR[n + k] * δˢ(n + k)
     end
   end
-  Hᶜʰv = Hᶜʰv * ψ.AR[n + range_∑h - 1] * δʳ(n + range_∑h - 1) * ψ′.AR[n + range_∑h - 1]     #right most extremity
+  Hᶜʰv =
+    Hᶜʰv *
+    ψ.AR[n + range_∑h - 1] *
+    δʳ(n + range_∑h - 1) *
+    ψ′.AR[n + range_∑h - 1] *
+    ∑h[n][end]    #right most extremity
   #Now we are building contributions of the form AL[n - j] ... AL[n] - v - AR[n + 1] ... AR[n + range_∑h - 1 - j]
   for j in 1:(range_∑h - 2)
-    temp_Hᶜʰv = ψ.AL[n - j] * δˡ(n - 1 - j) * ψ′.AL[n - j] * ∑h[(n - j, n + 1 - j)]
-    common_sites = findsites(ψ, ∑h[(n - j, n + 1 - j)])
+    temp_Hᶜʰv = ψ.AL[n - j] * δˡ(n - 1 - j) * ψ′.AL[n - j] * ∑h[n - j][1]
+    common_sites = findsites(ψ, ∑h[n - j])
     idx = 2
     for k in 1:j
       if n - j + k == common_sites[idx]
-        temp_Hᶜʰv = temp_Hᶜʰv * ψ.AL[n - j + k] * ψ′.AL[n - j + k]
+        temp_Hᶜʰv = temp_Hᶜʰv * ψ.AL[n - j + k] * ψ′.AL[n - j + k] * ∑h[n - j][idx]
         idx += 1
       else
         temp_Hᶜʰv = temp_Hᶜʰv * ψ.AL[n - j + k] * ψ′.AL[n - j + k] * δˢ(n - j + k)
@@ -74,7 +79,7 @@ function Base.:*(H::Hᶜ, v::ITensor)
     temp_Hᶜʰv = temp_Hᶜʰv * v
     for k in (j + 1):(range_∑h - 2)
       if n - j + k == common_sites[idx]
-        temp_Hᶜʰv = temp_Hᶜʰv * ψ.AR[n - j + k] * ψ′.AR[n - j + k]
+        temp_Hᶜʰv = temp_Hᶜʰv * ψ.AR[n - j + k] * ψ′.AR[n - j + k] * ∑h[n - j][idx]
         idx += 1
       else
         temp_Hᶜʰv = temp_Hᶜʰv * ψ.AR[n - j + k] * ψ′.AR[n - j + k] * δˢ(n - j + k)
@@ -82,6 +87,7 @@ function Base.:*(H::Hᶜ, v::ITensor)
     end
     temp_Hᶜʰv =
       temp_Hᶜʰv *
+      ∑h[n - j][end] *
       ψ.AR[n - j + range_∑h - 1] *
       δʳ(n - j + range_∑h - 1) *
       ψ′.AR[n - j + range_∑h - 1]
@@ -117,26 +123,31 @@ function Base.:*(H::Hᴬᶜ, v::ITensor)
   Hᴬᶜᴿv = v * δˡ(n - 1) * δˢ(n) * Hᴿ[n]
   #We now start building terms where AC overlap with the local Hamiltonian
   # We start with the tensor v - AR[n+1] ... AR[n + range_∑h - 1]
-  Hᴬᶜʰv = v * δˡ(n - 1) * ∑h[(n, n + 1)]
-  common_sites = findsites(ψ, ∑h[(n, n + 1)])
-  idx = 2#list the sites Σh, we start at 2 because n is already taken into account
+  Hᴬᶜʰv = v * δˡ(n - 1) * ∑h[n][1]
+  common_sites = findsites(ψ, ∑h[n])
+  idx = 2 #list the sites Σh, we start at 2 because n is already taken into account
   for k in 1:(range_∑h - 2)
     if n + k == common_sites[idx]
-      Hᴬᶜʰv = Hᴬᶜʰv * ψ.AR[n + k] * ψ′.AR[n + k]
+      Hᴬᶜʰv = Hᴬᶜʰv * ψ.AR[n + k] * ψ′.AR[n + k] * ∑h[n][idx]
       idx += 1
     else
       Hᴬᶜʰv = Hᴬᶜʰv * ψ.AR[n + k] * ψ′.AR[n + k] * δˢ(n + k)
     end
   end
-  Hᴬᶜʰv = Hᴬᶜʰv * ψ.AR[n + range_∑h - 1] * ψ′.AR[n + range_∑h - 1] * δʳ(n + range_∑h - 1) #rightmost extremity
+  Hᴬᶜʰv =
+    Hᴬᶜʰv *
+    ∑h[n][end] *
+    ψ.AR[n + range_∑h - 1] *
+    ψ′.AR[n + range_∑h - 1] *
+    δʳ(n + range_∑h - 1) #rightmost extremity
   #Now we are building contributions of the form AL[n - j] ... AL[n-1] - v - AR[n + 1] ... AR[n + range_∑h - 1 - j]
   for j in 1:(range_∑h - 1)
-    temp_Hᴬᶜʰv = ψ.AL[n - j] * δˡ(n - j - 1) * ψ′.AL[n - j] * ∑h[(n - j, n - j + 1)]
-    common_sites = findsites(ψ, ∑h[(n - j, n - j + 1)])
+    temp_Hᴬᶜʰv = ψ.AL[n - j] * δˡ(n - j - 1) * ψ′.AL[n - j] * ∑h[n - j][1]
+    common_sites = findsites(ψ, ∑h[n - j])
     idx = 2
     for k in 1:(j - 1)
       if n - j + k == common_sites[idx]
-        temp_Hᴬᶜʰv = temp_Hᴬᶜʰv * ψ.AL[n - j + k] * ψ′.AL[n - j + k]
+        temp_Hᴬᶜʰv = temp_Hᴬᶜʰv * ψ.AL[n - j + k] * ψ′.AL[n - j + k] * ∑h[n - j][idx]
         idx += 1
       else
         temp_Hᴬᶜʰv = temp_Hᴬᶜʰv * ψ.AL[n - j + k] * ψ′.AL[n - j + k] * δˢ(n - j + k)
@@ -144,17 +155,17 @@ function Base.:*(H::Hᴬᶜ, v::ITensor)
     end
     #Finished with AL, treating the center AC = v
     if j == range_∑h - 1
-      temp_Hᴬᶜʰv = temp_Hᴬᶜʰv * v * δʳ(n - j + range_∑h - 1)
+      temp_Hᴬᶜʰv = temp_Hᴬᶜʰv * v * δʳ(n - j + range_∑h - 1) * ∑h[n - j][end]
     else
       if n == common_sites[idx] #need to check whether we need to branch v
-        temp_Hᴬᶜʰv = temp_Hᴬᶜʰv * v
+        temp_Hᴬᶜʰv = temp_Hᴬᶜʰv * v * ∑h[n - j][idx]
         idx += 1
       else
         temp_Hᴬᶜʰv = temp_Hᴬᶜʰv * v * δˢ(n)
       end
       for k in (j + 1):(range_∑h - 2)
         if n + k - j == common_sites[idx]
-          temp_Hᴬᶜʰv = temp_Hᴬᶜʰv * ψ.AR[n + k - j] * ψ′.AR[n + k - j]
+          temp_Hᴬᶜʰv = temp_Hᴬᶜʰv * ψ.AR[n + k - j] * ψ′.AR[n + k - j] * ∑h[n - j][idx]
           idx += 1
         else
           temp_Hᴬᶜʰv = temp_Hᴬᶜʰv * ψ.AR[n + k - j] * ψ′.AR[n + k - j] * δˢ(n + k - j)
@@ -162,6 +173,7 @@ function Base.:*(H::Hᴬᶜ, v::ITensor)
       end
       temp_Hᴬᶜʰv =
         temp_Hᴬᶜʰv *
+        ∑h[n - j][end] *
         ψ.AR[n + range_∑h - 1 - j] *
         ψ′.AR[n + range_∑h - 1 - j] *
         δʳ(n - j + range_∑h - 1)
@@ -316,12 +328,13 @@ function vumps_iteration_sequential(
   # XXX: make this prime the center sites
   ψ̃ = prime(linkinds, ψᴴ)
 
-  # TODO: replace with linkinds(ψ)
-  l = CelledVector([commoninds(ψ.AL[n], ψ.AL[n + 1]) for n in 1:Nsites])
-  l′ = CelledVector([commoninds(ψ′.AL[n], ψ′.AL[n + 1]) for n in 1:Nsites])
-  r = CelledVector([commoninds(ψ.AR[n], ψ.AR[n + 1]) for n in 1:Nsites])
-  r′ = CelledVector([commoninds(ψ′.AR[n], ψ′.AR[n + 1]) for n in 1:Nsites])
+  l = linkinds(only, ψ.AL)
+  l′ = linkinds(only, ψ′.AL)
+  r = linkinds(only, ψ.AR)
+  r′ = linkinds(only, ψ′.AR)
   s = siteinds(only, ψ)
+  δʳ(n) = δ(dag(r[n]), prime(r[n]))
+  δˡ(n) = δ(l[n], l′[n])
   δˢ(n) = δ(dag(s[n]), prime(s[n]))
 
   ψ = copy(ψ)
@@ -336,15 +349,19 @@ function vumps_iteration_sequential(
     hᴸ = Vector{ITensor}(undef, Nsites)
     for k in 1:Nsites
       hᴸ[k] =
-        δ(only(l[k - range_∑h]), only(l′[k - range_∑h])) *
+        δˡ(k - range_∑h) *
         ψ.AL[k - range_∑h + 1] *
-        ∑h[(k - range_∑h + 1, k - range_∑h + 2)] *
+        ∑h[(k - range_∑h + 1, k - range_∑h + 2)][1] *
         ψ′.AL[k - range_∑h + 1]
       common_sites = findsites(ψ, ∑h[(k - range_∑h + 1, k - range_∑h + 2)])
       idx = 2
       for j in 2:range_∑h
         if k - range_∑h + j == common_sites[idx]
-          hᴸ[k] = hᴸ[k] * ψ.AL[k - range_∑h + j] * ψ′.AL[k - range_∑h + j]
+          hᴸ[k] =
+            hᴸ[k] *
+            ψ.AL[k - range_∑h + j] *
+            ψ′.AL[k - range_∑h + j] *
+            ∑h[(k - range_∑h + 1, k - range_∑h + 2)][idx]
           idx += 1
         else
           hᴸ[k] =
@@ -356,16 +373,12 @@ function vumps_iteration_sequential(
 
     hᴿ = Vector{ITensor}(undef, Nsites)
     for k in 1:Nsites
-      hᴿ[k] =
-        ψ.AR[k + range_∑h] *
-        ∑h[(k + 1, k + 2)] *
-        ψ′.AR[k + range_∑h] *
-        δ(only(dag(r[k + range_∑h])), only(dag(r′[k + range_∑h])))
-      common_sites = findsites(ψ, ∑h[(k + 1, k + 2)])
+      hᴿ[k] = ψ.AR[k + range_∑h] * ∑h[k + 1][end] * ψ′.AR[k + range_∑h] * δʳ(k + range_∑h)
+      common_sites = findsites(ψ, ∑h[k + 1])
       idx = length(common_sites) - 1
       for j in (range_∑h - 1):-1:1
         if k + j == common_sites[idx]
-          hᴿ[k] = hᴿ[k] * ψ.AR[k + j] * ψ′.AR[k + j]
+          hᴿ[k] = hᴿ[k] * ψ.AR[k + j] * ψ′.AR[k + j] * ∑h[k + 1][idx]
           idx -= 1
         else
           hᴿ[k] = hᴿ[k] * ψ.AR[k + j] * ψ′.AR[k + j] * δˢ(k + j)
@@ -373,10 +386,8 @@ function vumps_iteration_sequential(
       end
     end
     hᴿ = InfiniteMPS(hᴿ)
-    eᴸ = [
-      (hᴸ[k] * ψ.C[k] * δ(only(dag(r[k])), only(dag(r′[k]))) * ψ′.C[k])[] for k in 1:Nsites
-    ]
-    eᴿ = [(hᴿ[k] * ψ.C[k] * δ(only(l[k]), only(l′[k])) * ψ′.C[k])[] for k in 1:Nsites]
+    eᴸ = [(hᴸ[k] * ψ.C[k] * δʳ(k) * ψ′.C[k])[] for k in 1:Nsites]
+    eᴿ = [(hᴿ[k] * ψ.C[k] * δˡ(k) * ψ′.C[k])[] for k in 1:Nsites]
     for k in 1:Nsites
       # TODO: remove `denseblocks` once BlockSparse + DiagBlockSparse is supported
       hᴸ[k] -= eᴸ[k] * denseblocks(δ(inds(hᴸ[k])))
