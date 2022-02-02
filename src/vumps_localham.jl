@@ -347,7 +347,6 @@ function tdvp_iteration_sequential(
   eᴸ = Vector{Float64}(undef, Nsites)
   eᴿ = Vector{Float64}(undef, Nsites)
   for n in 1:Nsites
-    # TODO improve the multisite contraction such that we contract with identities
     hᴸ = Vector{ITensor}(undef, Nsites)
     for k in 1:Nsites
       hᴸ[k] =
@@ -504,25 +503,31 @@ function tdvp_iteration_parallel(
   # XXX: make this prime the center sites
   ψ̃ = prime(linkinds, ψᴴ)
 
-  # TODO: replace with linkinds(ψ)
-  l = CelledVector([commoninds(ψ.AL[n], ψ.AL[n + 1]) for n in 1:Nsites])
-  l′ = CelledVector([commoninds(ψ′.AL[n], ψ′.AL[n + 1]) for n in 1:Nsites])
-  r = CelledVector([commoninds(ψ.AR[n], ψ.AR[n + 1]) for n in 1:Nsites])
-  r′ = CelledVector([commoninds(ψ′.AR[n], ψ′.AR[n + 1]) for n in 1:Nsites])
+  l = linkinds(only, ψ.AL)
+  l′ = linkinds(only, ψ′.AL)
+  r = linkinds(only, ψ.AR)
+  r′ = linkinds(only, ψ′.AR)
+  s = siteinds(only, ψ)
+  δʳ(n) = δ(dag(r[n]), prime(r[n]))
+  δˡ(n) = δ(l[n], l′[n])
+  δˢ(n) = δ(dag(s[n]), prime(s[n]))
 
-  # TODO improve the multisite contraction such that we contract with identities
   hᴸ = Vector{ITensor}(undef, Nsites)
   for k in 1:Nsites
     hᴸ[k] =
-      δ(only(l[k - range_∑h]), only(l′[k - range_∑h])) *
+      δˡ(k - range_∑h) *
       ψ.AL[k - range_∑h + 1] *
-      ∑h[(k - range_∑h + 1, k - range_∑h + 2)] *
+      ∑h[(k - range_∑h + 1, k - range_∑h + 2)][1] *
       ψ′.AL[k - range_∑h + 1]
     common_sites = findsites(ψ, ∑h[(k - range_∑h + 1, k - range_∑h + 2)])
     idx = 2
     for j in 2:range_∑h
       if k - range_∑h + j == common_sites[idx]
-        hᴸ[k] = hᴸ[k] * ψ.AL[k - range_∑h + j] * ψ′.AL[k - range_∑h + j]
+        hᴸ[k] =
+          hᴸ[k] *
+          ψ.AL[k - range_∑h + j] *
+          ψ′.AL[k - range_∑h + j] *
+          ∑h[(k - range_∑h + 1, k - range_∑h + 2)][idx]
         idx += 1
       else
         hᴸ[k] =
@@ -534,16 +539,12 @@ function tdvp_iteration_parallel(
 
   hᴿ = Vector{ITensor}(undef, Nsites)
   for k in 1:Nsites
-    hᴿ[k] =
-      ψ.AR[k + range_∑h] *
-      ∑h[(k + 1, k + 2)] *
-      ψ′.AR[k + range_∑h] *
-      δ(only(dag(r[k + range_∑h])), only(dag(r′[k + range_∑h])))
-    common_sites = findsites(ψ, ∑h[(k + 1, k + 2)])
+    hᴿ[k] = ψ.AR[k + range_∑h] * ∑h[k + 1][end] * ψ′.AR[k + range_∑h] * δʳ(k + range_∑h)
+    common_sites = findsites(ψ, ∑h[k + 1])
     idx = length(common_sites) - 1
     for j in (range_∑h - 1):-1:1
       if k + j == common_sites[idx]
-        hᴿ[k] = hᴿ[k] * ψ.AR[k + j] * ψ′.AR[k + j]
+        hᴿ[k] = hᴿ[k] * ψ.AR[k + j] * ψ′.AR[k + j] * ∑h[k + 1][idx]
         idx -= 1
       else
         hᴿ[k] = hᴿ[k] * ψ.AR[k + j] * ψ′.AR[k + j] * δˢ(k + j)
@@ -551,10 +552,8 @@ function tdvp_iteration_parallel(
     end
   end
   hᴿ = InfiniteMPS(hᴿ)
-  eᴸ = [
-    (hᴸ[k] * ψ.C[k] * δ(only(dag(r[k])), only(dag(r′[k]))) * ψ′.C[k])[] for k in 1:Nsites
-  ]
-  eᴿ = [(hᴿ[k] * ψ.C[k] * δ(only(l[k]), only(l′[k])) * ψ′.C[k])[] for k in 1:Nsites]
+  eᴸ = [(hᴸ[k] * ψ.C[k] * δʳ(k) * ψ′.C[k])[] for k in 1:Nsites]
+  eᴿ = [(hᴿ[k] * ψ.C[k] * δˡ(k) * ψ′.C[k])[] for k in 1:Nsites]
   for k in 1:Nsites
     # TODO: remove `denseblocks` once BlockSparse + DiagBlockSparse is supported
     hᴸ[k] -= eᴸ[k] * denseblocks(δ(inds(hᴸ[k])))
