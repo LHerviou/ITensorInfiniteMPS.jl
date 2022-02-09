@@ -87,9 +87,19 @@ ITensors.findsites(ψ::InfiniteCanonicalMPS, T::ITensor) = findsites(ψ.AL, T)
 struct InfiniteITensorSum
   data::CelledVector{MPO}
 end
+translater(h::InfiniteITensorSum) = h.data.translater
 InfiniteITensorSum(N::Int) = InfiniteITensorSum(Vector{ITensor}(undef, N))
+function InfiniteITensorSum(N::Int, translater::Function)
+  return InfiniteITensorSum(Vector{ITensor}(undef, N), translater)
+end
 InfiniteITensorSum(data::Vector{MPO}) = InfiniteITensorSum(CelledVector(data))
-InfiniteITensorSum(data::Vector{ITensor}) = InfiniteITensorSum(CelledVector(MPO.(data)))
+function InfiniteITensorSum(data::Vector{MPO}, translater::Function)
+  return InfiniteITensorSum(CelledVector(data, translater))
+end
+function InfiniteITensorSum(data::Vector{ITensor}, translater::Function)
+  return InfiniteITensorSum(CelledVector(MPO.(data), translater))
+end
+
 function Base.getindex(l::InfiniteITensorSum, n1n2::Tuple{Int,Int})
   n1, n2 = n1n2
   @assert n2 == n1 + 1

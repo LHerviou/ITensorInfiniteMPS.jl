@@ -25,7 +25,7 @@ end
 function InfiniteITensorSum(model::Model, s::CelledVector; kwargs...)
   N = length(s)
   mpos = [MPO(model, s, n; kwargs...) for n in 1:N] #slightly improved version. Note: the current implementation does not really allow for staggered potentials for example
-  return InfiniteITensorSum(mpos)
+  return InfiniteITensorSum(mpos, translater(s))
 end
 
 # MPO building version

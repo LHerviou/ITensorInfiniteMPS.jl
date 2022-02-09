@@ -16,15 +16,33 @@ function (T::Type{MPST})(
   return MPST(data, llim, rlim, false)
 end
 
+function (T::Type{MPST})(
+  data::CelledVector{<:ITensor,F}, llim, rlim
+) where {MPST<:AbstractInfiniteMPS,F}
+  return MPST(data, llim, rlim, false)
+end
+
 # TODO: use InfiniteMPS(data, -∞, ∞) when AbstractMPS
 # is written more generically
 function (T::Type{MPST})(data::Vector{<:ITensor}) where {MPST<:AbstractInfiniteMPS}
   return MPST(data, 0, length(data) + 1)
 end
 
+function (T::Type{MPST})(
+  data::Vector{<:ITensor}, translater::Function
+) where {MPST<:AbstractInfiniteMPS}
+  return MPST(CelledVector(data, translater), 0, length(data) + 1)
+end
+
 # TODO: better way to determine left and right limits
 function (T::Type{MPST})(ψ::MPS; reverse::Bool=false) where {MPST<:AbstractInfiniteMPS}
   return MPST(ITensors.data(ψ), ψ.llim, ψ.rlim, reverse)
+end
+
+function (T::Type{MPST})(
+  ψ::MPS, translater::Function; reverse::Bool=false
+) where {MPST<:AbstractInfiniteMPS}
+  return MPST(CelledVector(ITensors.data(ψ), translater), ψ.llim, ψ.rlim, reverse)
 end
 
 # TODO: better way to determine left and right limits
@@ -36,6 +54,12 @@ end
 
 function (T::Type{MPST})(N::Integer; reverse::Bool=false) where {MPST<:AbstractInfiniteMPS}
   return MPST(MPS(N); reverse=reverse)
+end
+
+function (T::Type{MPST})(
+  N::Integer, translater::Function; reverse::Bool=false
+) where {MPST<:AbstractInfiniteMPS}
+  return MPST(MPS(N), translater; reverse=reverse)
 end
 
 function Base.reverse(ψ::MPST) where {MPST<:AbstractInfiniteMPS}

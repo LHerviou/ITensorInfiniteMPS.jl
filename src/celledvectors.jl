@@ -34,7 +34,6 @@ function getsite(ts::TagSet)
   return parse(Int, celltag[(length(indextagprefix()) + 1):end])
 end
 
-
 ##Translation operators
 
 #Default translate cell
@@ -54,11 +53,15 @@ end
 
 #Transfer the functional properties
 #translatecell(translater, T::ITensor, n::Integer) = translater(T, n)
-translatecell(translater::Function, T::ITensor, n::Integer) = ITensors.setinds(T, translatecell(translater, inds(T), n))
-translatecell(translater::Function, T::MPO, n::Integer) = translatecell.(translater::F, T, n)
-translatecell(translater::Function, T::Matrix{ITensor}, n::Integer) = translatecell.(translater::F, T, n)
+function translatecell(translater::Function, T::ITensor, n::Integer)
+  return ITensors.setinds(T, translatecell(translater, inds(T), n))
+end
+translatecell(translater::Function, T::MPO, n::Integer) = translatecell.(translater, T, n)
+function translatecell(translater::Function, T::Matrix{ITensor}, n::Integer)
+  return translatecell.(translater, T, n)
+end
 translatecell(translater::Function, i::Index, n::Integer) = translater(i, n)
-function translatecell(translater, is::Union{<:Tuple,<:Vector}, n::Integer)
+function translatecell(translater::Function, is::Union{<:Tuple,<:Vector}, n::Integer)
   return translatecell.(translater, is, n)
 end
 
@@ -67,12 +70,14 @@ end
 #translatecell(T::MPO, n::Integer) = translatecell.(T, n)
 #translatecell(T::Matrix{ITensor}, n::Integer) = translatecell.(T, n)
 
-
 ## CelledVector definition
-struct CelledVector{T, F} <: AbstractVector{T}
+struct CelledVector{T,F} <: AbstractVector{T}
   data::Vector{T}
   translater::F
 end
+
+copy(m::CelledVector) = typeof(m)(copy(m.data), m.translater) #needed to carry the translater when copying
+deepcopy(m::CelledVector) = typeof(m)(deepcopy(m.data), m.translater) #needed to carry the translater when copying
 
 ITensors.data(cv::CelledVector) = cv.data
 Base.convert(::Type{CelledVector{T}}, v::Vector) where {T} = CelledVector{T}(v)
@@ -85,14 +90,14 @@ end
 function CelledVector{T}(::UndefInitializer, n::Integer, translater::Function) where {T}
   return CelledVector(Vector{T}(undef, n), translater::Function)
 end
-
-CelledVector(v::AbstractVector) = CelledVector(v, mytranslatecell)
-
-
-function mytranslatecell(i::Index, n::Integer)
-  println("Blah")
-  return translatecell(i::Index, n::Integer)
+CelledVector(v::AbstractVector) = CelledVector(v, translatecell)
+function CelledVector{T}(v::Vector{T}) where {T}
+  return CelledVector(v, translatecell)
 end
+function CelledVector{T}(v::Vector{T}, translater::Function) where {T}
+  return CelledVector(v, translater)
+end
+
 """
     celllength(cv::CelledVector)
 

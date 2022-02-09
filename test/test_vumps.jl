@@ -17,6 +17,7 @@ using Random
     end
   end
 
+  temp_translatecell(i::Index, n::Integer) = translatecell(i, n)
   # VUMPS arguments
   cutoff = 1e-8
   maxdim = 20
@@ -47,7 +48,7 @@ using Random
     #end
 
     space_ = fill(space_shifted(model, 1; conserve_qns=conserve_qns), nsites)
-    s = infsiteinds("S=1/2", nsites; space=space_)
+    s = infsiteinds("S=1/2", nsites; space=space_, translater=temp_translatecell)
     ψ = InfMPS(s, initstate)
 
     # Form the Hamiltonian
@@ -71,6 +72,7 @@ using Random
       ψ = tdvp(H, ψ; vumps_kwargs...)
     end
 
+    @test ITensorInfiniteMPS.translater(ψ) === temp_translatecell #Check that the translation is correctly carried around
     # Check translational invariance
     ## @test contract(ψ.AL[1:nsites]..., ψ.C[nsites]) ≈ contract(ψ.C[0], ψ.AR[1:nsites]...) rtol =
     ##   1e-6

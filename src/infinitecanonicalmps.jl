@@ -26,8 +26,10 @@ function __siteinds(site_tag, N::Int, space)
 end
 
 infsiteinds(s::Vector{<:Index}) = CelledVector(addtags(s, celltags(1)))
-infsiteinds(s::Vector{<:Index}, translater) = CelledVector(addtags(s, celltags(1)), translater)
-function infsiteinds(site_tag, N::Int; space=nothing, translater = nothing, kwargs...)
+function infsiteinds(s::Vector{<:Index}, translater)
+  return CelledVector(addtags(s, celltags(1)), translater)
+end
+function infsiteinds(site_tag, N::Int; space=nothing, translater=nothing, kwargs...)
   if !isnothing(space)
     s = _siteinds(site_tag, N; space=space)
   else
@@ -50,7 +52,7 @@ function InfMPS(s::Vector, f::Function)
   return InfMPS(infsiteinds(s), f)
 end
 
-function InfMPS(s::Vector, f::Function, translater)
+function InfMPS(s::Vector, f::Function, translater::Function)
   return InfMPS(infsiteinds(s, translater), f)
 end
 
@@ -98,7 +100,8 @@ end
 
 function UniformMPS(s::CelledVector, f::Function; left_dir=ITensors.Out)
   sᶜ¹ = s[Cell(1)]
-  A = InfiniteMPS([ITensor(sⁿ) for sⁿ in sᶜ¹], s.translater)
+  A = InfiniteMPS([ITensor(sⁿ) for sⁿ in sᶜ¹], translater(s))
+  #A.data.translater = translater(s)
   N = length(sᶜ¹)
   for n in 1:N
     Aⁿ = A[n]
@@ -114,7 +117,7 @@ function InfMPS(s::CelledVector, f::Function)
   N = length(s)
   ψL = UniformMPS(s, f; left_dir=ITensors.Out)
   ψR = UniformMPS(s, f; left_dir=ITensors.In)
-  ψC = InfiniteMPS(N)
+  ψC = InfiniteMPS(N, translater(s))
   l = linkinds(ψL)
   r = linkinds(ψR)
   for n in 1:N
