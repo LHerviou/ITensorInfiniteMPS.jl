@@ -11,7 +11,7 @@ mutable struct InfiniteMPS <: AbstractInfiniteMPS
   rlim::Int #RealInfinity
   reverse::Bool
 end
-
+translater(ψ::InfiniteMPS) = ψ.data.translater
 #
 # InfiniteCanonicalMPS
 #
@@ -29,6 +29,7 @@ end
 # TODO: check if `isempty(ψ.AL)`, if so use `ψ.AR`
 nsites(ψ::InfiniteCanonicalMPS) = nsites(ψ.AL)
 isreversed(ψ::InfiniteCanonicalMPS) = isreversed(ψ.AL)
+translater(ψ::InfiniteCanonicalMPS) = translater(ψ.AL)
 #ITensors.data(ψ::InfiniteCanonicalMPS) = data(ψ.AL)
 ITensors.data(ψ::InfiniteCanonicalMPS) = ψ.AL.data
 

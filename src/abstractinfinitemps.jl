@@ -94,13 +94,13 @@ _setindex_cell1!(ψ::AbstractInfiniteMPS, val, n::Integer) = (ITensors.data(ψ)[
 function getindex(ψ::AbstractInfiniteMPS, n::Integer)
   cellₙ = cell(ψ, n)
   siteₙ = cellsite(ψ, n)
-  return translatecell(_getindex_cell1(ψ, siteₙ), cellₙ - 1)
+  return translatecell(translater(ψ), _getindex_cell1(ψ, siteₙ), cellₙ - 1)
 end
 
 function setindex!(ψ::AbstractInfiniteMPS, T::ITensor, n::Int)
   cellₙ = cell(ψ, n)
   siteₙ = cellsite(ψ, n)
-  _setindex_cell1!(ψ, translatecell(T, -(cellₙ - 1)), siteₙ)
+  _setindex_cell1!(ψ, translatecell(translater(ψ), T, -(cellₙ - 1)), siteₙ)
   return ψ
 end
 
@@ -206,10 +206,10 @@ end
 
 function ITensors.linkinds(f::typeof(only), ψ::AbstractInfiniteMPS)
   N = nsites(ψ)
-  return CelledVector([f(commoninds(ψ[n], ψ[n + 1])) for n in 1:N])
+  return CelledVector([f(commoninds(ψ[n], ψ[n + 1])) for n in 1:N], translater(ψ))
 end
 
 function ITensors.siteinds(f::typeof(only), ψ::AbstractInfiniteMPS)
   N = nsites(ψ)
-  return CelledVector([f(uniqueinds(ψ[n], ψ[n - 1], ψ[n + 1])) for n in 1:N])
+  return CelledVector([f(uniqueinds(ψ[n], ψ[n - 1], ψ[n + 1])) for n in 1:N], translater(ψ))
 end

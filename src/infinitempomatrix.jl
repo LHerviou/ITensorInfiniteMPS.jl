@@ -6,6 +6,8 @@ mutable struct InfiniteMPOMatrix <: AbstractInfiniteMPS
   reverse::Bool
 end
 
+translater(mpo::InfiniteMPOMatrix) = mpo.data.translater
+
 # TODO better printing?
 function Base.show(io::IO, M::InfiniteMPOMatrix)
   print(io, "$(typeof(M))")
