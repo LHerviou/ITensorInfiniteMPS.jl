@@ -1,3 +1,5 @@
+import Base.copy
+import Base.deepcopy
 
 struct Cell{T}
   cell::T
@@ -76,8 +78,8 @@ struct CelledVector{T,F} <: AbstractVector{T}
   translater::F
 end
 
-copy(m::CelledVector) = typeof(m)(copy(m.data), m.translater) #needed to carry the translater when copying
-deepcopy(m::CelledVector) = typeof(m)(deepcopy(m.data), m.translater) #needed to carry the translater when copying
+Base.copy(m::CelledVector) = typeof(m)(copy(m.data), m.translater) #needed to carry the translater when copying
+Base.deepcopy(m::CelledVector) = typeof(m)(deepcopy(m.data), m.translater) #needed to carry the translater when copying
 
 ITensors.data(cv::CelledVector) = cv.data
 Base.convert(::Type{CelledVector{T}}, v::Vector) where {T} = CelledVector{T}(v)

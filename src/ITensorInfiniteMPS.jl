@@ -40,12 +40,14 @@ include("models/ising_extended.jl")
 include("models/heisenberg.jl")
 include("models/hubbard.jl")
 include("models/xx.jl")
+include("models/fqhe13.jl")
 include("orthogonalize.jl")
 include("infinitemps_approx.jl")
 include("nullspace.jl")
 include("subspace_expansion.jl")
 include("vumps_localham.jl")
 include("vumps_mpo.jl")
+include("models/fqheauxiliaries/generate_hamiltonian.jl")
 
 export Cell,
   CelledVector,

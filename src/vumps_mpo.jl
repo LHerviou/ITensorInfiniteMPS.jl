@@ -44,29 +44,7 @@ function (A::AOᴸ)(x)
   return xT - xR
 end
 
-# apply the left transfer matrix at position n1 to the vector Lstart, replacing Ltarget
-function apply_local_left_transfer_matrix!(
-  Lstart::Vector{ITensor}, H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS, n_1::Int64
-)
-  dₕ = length(Lstart)
-  ψ′ = dag(ψ)'
-  for j in 1:dₕ
-    init = false
-    for k in j:dₕ
-      if !isempty(H[n_1][k, j]) && isassigned(Lstart, k) && !isempty(Lstart[k])
-        if isassigned(Lstart, j) && init
-          Lstart[j] += Lstart[k] * ψ.AL[n_1] * ψ′.AL[n_1] * H[n_1][k, j]
-        else
-          Lstart[j] = Lstart[k] * ψ.AL[n_1] * ψ′.AL[n_1] * H[n_1][k, j]
-          init = true
-        end
-      end
-    end
-  end
-end
-
-function apply_local_left_transfer_matrix!(
-  Ltarget::Vector{ITensor},
+function apply_local_left_transfer_matrix(
   Lstart::Vector{ITensor},
   H::InfiniteMPOMatrix,
   ψ::InfiniteCanonicalMPS,
@@ -74,6 +52,8 @@ function apply_local_left_transfer_matrix!(
 )
   dₕ = length(Lstart)
   ψ′ = dag(ψ)'
+
+  Ltarget = Vector{ITensor}(undef, size(H[n_1])[1])
   for j in 1:dₕ
     init = false
     for k in reverse(j:dₕ)
@@ -87,16 +67,11 @@ function apply_local_left_transfer_matrix!(
       end
     end
   end
+  return Ltarget
 end
-# function apply_local_left_transfer_matrix(Lstart::Vector{ITensor}, H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS, n_1::Int64)
-#   Ltarget = Vector{ITensor}(undef, length(Lstart))
-#   apply_left_transfer_matrix!(Ltarget, Lstart, H, ψ, n_1)
-#   return Ltarget
-# end
 
 # apply the left transfer matrix at position n1 to the vector Lstart considering it at position m, adding to Ltarget
-function apply_local_left_transfer_matrix!(
-  Ltarget::Vector{ITensor},
+function apply_local_left_transfer_matrix(
   Lstart::ITensor,
   m::Int64,
   H::InfiniteMPOMatrix,
@@ -104,41 +79,30 @@ function apply_local_left_transfer_matrix!(
   n_1::Int64;
   reset=true,
 )
+  Ltarget = Vector{ITensor}(undef, size(H[n_1])[1])
   for j in 1:m
-    if !reset && !isempty(H[n_1][m, j])
-      if isassigned(Ltarget, j)
-        Ltarget[j] += Lstart * ψ.AL[n_1] * dag(prime(ψ.AL[n_1])) * H[n_1][m, j]
-      else
-        Ltarget[j] = Lstart * ψ.AL[n_1] * dag(prime(ψ.AL[n_1])) * H[n_1][m, j]
-      end
-    else
-      Ltarget[j] = Lstart * ψ.AL[n_1] * dag(prime(ψ.AL[n_1])) * H[n_1][m, j] #TODO optimize
+    if !isempty(H[n_1][m, j])
+      Ltarget[j] = Lstart * ψ.AL[n_1] * dag(prime(ψ.AL[n_1])) * H[n_1][m, j]
     end
   end
+  return Ltarget
 end
 
 #apply the left transfer matrix n1:n1+nsites(ψ)-1
-function apply_left_transfer_matrix!(
-  Ltarget::Vector{ITensor},
+function apply_left_transfer_matrix(
   Lstart::ITensor,
   m::Int64,
   H::InfiniteMPOMatrix,
   ψ::InfiniteCanonicalMPS,
   n_1::Int64,
 )
-  apply_local_left_transfer_matrix!(Ltarget, Lstart, m, H, ψ, n_1)
+  Ltarget = apply_local_left_transfer_matrix(Lstart, m, H, ψ, n_1)
   for j in 1:(nsites(ψ) - 1)
-    apply_local_left_transfer_matrix!(Ltarget, H, ψ, n_1 + j)
+    Ltarget = apply_local_left_transfer_matrix(Ltarget, H, ψ, n_1 + j)
   end
-end
-
-function apply_left_transfer_matrix(
-  Lstart::ITensor, m::Int64, H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS, n_1::Int64
-)
-  Ltarget = Vector{ITensor}(undef, size(H[n_1])[1])
-  apply_left_transfer_matrix!(Ltarget, Lstart, m, H, ψ, n_1)
   return Ltarget
 end
+
 # Also input C bond matrices to help compute the right fixed points
 # of ψ (R ≈ C * dag(C))
 function left_environment(H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS; tol=1e-10)
@@ -146,7 +110,6 @@ function left_environment(H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS; tol=1e
   @assert N == nsites(ψ)
 
   # Do the 1-site case first
-
   ψ′ = dag(ψ)'
 
   l = linkinds(only, ψ.AL)
@@ -194,7 +157,7 @@ function left_environment(H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS; tol=1e
     end
   end
   for n in 2:N
-    apply_local_left_transfer_matrix!(Ls[n], Ls[n - 1], H, ψ, n)
+    Ls[n] = apply_local_left_transfer_matrix(Ls[n - 1], H, ψ, n)
   end
   return CelledVector(Ls, translater(ψ)), eₗ[1]
 end
@@ -250,8 +213,7 @@ function apply_local_right_transfer_matrix!(
   end
 end
 
-function apply_local_right_transfer_matrix!(
-  Ltarget::Vector{ITensor},
+function apply_local_right_transfer_matrix(
   Lstart::Vector{ITensor},
   H::InfiniteMPOMatrix,
   ψ::InfiniteCanonicalMPS,
@@ -259,6 +221,7 @@ function apply_local_right_transfer_matrix!(
 )
   dₕ = length(Lstart)
   ψ′ = dag(ψ)'
+  Ltarget = Vector{ITensor}(undef, size(H[n_1])[1])
   for j in reverse(1:dₕ)
     init = false
     for k in reverse(1:j)
@@ -272,11 +235,11 @@ function apply_local_right_transfer_matrix!(
       end
     end
   end
+  return Ltarget
 end
 
 # apply the left transfer matrix at position n1 to the vector Lstart considering it at position m, adding to Ltarget
-function apply_local_right_transfer_matrix!(
-  Ltarget::Vector{ITensor},
+function apply_local_right_transfer_matrix(
   Lstart::ITensor,
   m::Int64,
   H::InfiniteMPOMatrix,
@@ -284,41 +247,29 @@ function apply_local_right_transfer_matrix!(
   n_1::Int64;
   reset=true,
 )
-  dₕ = length(Ltarget)
+  dₕ = size(H[n_1])[1]
   ψ′ = dag(prime(ψ.AR[n_1]))
+  Ltarget = Vector{ITensor}(undef, dₕ)
   for j in m:dₕ
-    if !reset && !isempty(H[n_1][j, m])
-      if isassigned(Ltarget, j)
-        Ltarget[j] += Lstart * ψ.AR[n_1] * ψ′ * H[n_1][j, m]
-      else
-        Ltarget[j] = Lstart * ψ.AR[n_1] * ψ′ * H[n_1][j, m]
-      end
-    else
+    if !isempty(H[n_1][j, m])
       Ltarget[j] = Lstart * ψ.AR[n_1] * ψ′ * H[n_1][j, m] #TODO optimize
     end
   end
+  return Ltarget
 end
 
 #apply the right transfer matrix n1:n1+nsites(ψ)-1
-function apply_right_transfer_matrix!(
-  Ltarget::Vector{ITensor},
+function apply_right_transfer_matrix(
   Lstart::ITensor,
   m::Int64,
   H::InfiniteMPOMatrix,
   ψ::InfiniteCanonicalMPS,
   n_1::Int64,
 )
-  apply_local_right_transfer_matrix!(Ltarget, Lstart, m, H, ψ, n_1)
+  Ltarget = apply_local_right_transfer_matrix(Lstart, m, H, ψ, n_1)
   for j in 1:(nsites(ψ) - 1)
-    apply_local_right_transfer_matrix!(Ltarget, H, ψ, n_1 - j)
+    Ltarget = apply_local_right_transfer_matrix(Ltarget, H, ψ, n_1 - j)
   end
-end
-
-function apply_right_transfer_matrix(
-  Lstart::ITensor, m::Int64, H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS, n_1::Int64
-)
-  Ltarget = Vector{ITensor}(undef, size(H[n_1])[1])
-  apply_right_transfer_matrix!(Ltarget, Lstart, m, H, ψ, n_1)
   return Ltarget
 end
 
@@ -369,11 +320,9 @@ function right_environment(H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS; tol=1
     end
   end
   if N > 1
-    apply_local_right_transfer_matrix!(
-      Rs[N], translatecell(translater(ψ), Rs[1], 1), H, ψ, N
-    )
+    Rs[N] = apply_local_right_transfer_matrix(translatecell(translater(ψ), Rs[1], 1), H, ψ, N)
     for n in reverse(2:(N - 1))
-      apply_local_right_transfer_matrix!(Rs[n], Rs[n + 1], H, ψ, n)
+      Rs[n] = apply_local_right_transfer_matrix(Rs[n + 1], H, ψ, n)
     end
   end
   return CelledVector(Rs, translater(ψ)), eᵣ[1]
