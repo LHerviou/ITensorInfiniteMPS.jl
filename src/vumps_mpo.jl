@@ -40,7 +40,7 @@ function (A::AOᴸ)(x)
   for j in (2 - N):1
     xT = xT * H[j][n, n] * ψ.AL[j] * ψ′.AL[j]
   end
-  xR = x * ψ.C[n] * ψ′.C[n] * δʳ(n) * denseblocks(δˡ(n))
+  xR = x * ψ.C[1] * ψ′.C[1] * δʳ(1) * denseblocks(δˡ(1))
   return xT - xR
 end
 
@@ -188,7 +188,7 @@ function (A::AOᴿ)(x)
   for j in reverse(1:N)
     xT = xT * ψ.AR[j] * H[j][n, n] * ψ′.AR[j]
   end
-  xR = x * ψ.C[0] * ψ′.C[0] * δʳ(0) * denseblocks(δˡ(0))
+  xR = x * ψ.C[0] * ψ′.C[0] * δˡ(0) * denseblocks(δʳ(0))
   return xT - xR
 end
 
