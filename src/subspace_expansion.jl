@@ -3,6 +3,13 @@ function replaceind_indval(IV::Tuple, iĩ::Pair)
   return ntuple(n -> first(IV[n]) == i ? ĩ => last(IV[n]) : IV[n], length(IV))
 end
 
+function flip_sign(ind::Index{Vector{Pair{QN, Int64}}}; max_flip = 2)
+  space = [QN([(qn.name, -qn.val, qn.modulus) for (y, qn) in enumerate(ind.space[x][1])][1:max_flip]...)  => ind.space[x][2] for x in 1:length(ind.space)]
+  return Index(space, tags = ind.tags, dir = ind.dir, plev = ind.plev)
+end
+
+
+
 function generate_twobody_nullspace(
   ψ::InfiniteCanonicalMPS, H::InfiniteITensorSum, b::Tuple{Int,Int}; atol=1e-2
 )
@@ -366,7 +373,7 @@ function subspace_expansion_four_body(
 
   dˡ = dim(lⁿ¹)
   dʳ = dim(rⁿ¹)
-  @assert dˡ == dʳ
+  #@assert dˡ == dʳ
   if dˡ ≥ maxdim
     println(
       "Current bond dimension at bond $b is $dˡ while desired maximum dimension is $maxdim, skipping bond dimension increase",
@@ -387,121 +394,62 @@ function subspace_expansion_four_body(
     println(
       "Impossible to do a subspace expansion, probably due to conservation constraints"
     )
-    return (ψ.AL[n1], ψ.AL[n1+1], ψ.AL[n1+2], ψ.AL[n1+3]), ψ.C[n1], (ψ.AR[n1], ψ.AR[n1 + 1], ψ.AL[n1+2], ψ.AL[n1+3])
+    return (ψ.AL[n1], ψ.AL[n1+1], ψ.AL[n1+2], ψ.AL[n1+3]), (ψ.C[n1], ψ.C[n1+1], ψ.C[n1+2]), (ψ.AR[n1], ψ.AR[n1 + 1], ψ.AR[n1+2], ψ.AR[n1+3])
   end
 
   U, S, V = svd(ψHN4, nL; maxdim=maxdim, cutoff=cutoff)#, kwargs...)
   if dim(S) == 0 #Crash before reaching this point
-    return (ψ.AL[n1], ψ.AL[n1+1], ψ.AL[n1+2], ψ.AL[n1+3]), ψ.C[n1], (ψ.AR[n1], ψ.AR[n1 + 1], ψ.AL[n1+2], ψ.AL[n1+3])
+    return (ψ.AL[n1], ψ.AL[n1+1], ψ.AL[n1+2], ψ.AL[n1+3]),  (ψ.C[n1], ψ.C[n1+1], ψ.C[n1+2]), (ψ.AR[n1], ψ.AR[n1 + 1], ψ.AR[n1+2], ψ.AR[n1+3])
   end
   @show S[end, end]
   NL *= dag(U)
 
-  next_tags = tags(only(uniqueinds(ψ.AL[n1], NL)))
-  ALⁿ¹, (newleftmost,) = ITensors.directsum(
-    ψ.AL[n1], dag(NL), uniqueinds(ψ.AL[n1], NL), uniqueinds(NL, ψ.AL[n1]); tags=(correct_tags,)
+  reference_tags = tags.([l[x] for x in n1:n1+2])
+  new_left_indices = [l[x] for x in n1:n1+2]
+  new_right_indices = [r[x] for x in n1:n1+2]
+
+  ALⁿ¹, (new_left_indices[1],) = ITensors.directsum(
+    ψ.AL[n1], dag(NL), uniqueinds(ψ.AL[n1], NL), uniqueinds(NL, ψ.AL[n1]); tags=(reference_tags[1],)
   )
+  new_right_indices[1] = ITensorInfiniteMPS.flip_sign(new_left_indices[1])
 
-  previous_tags = next_tags
-  next_tags = tags(only(uniqueinds(ψ.AL[n1+1], U2, ψ.AL[n1])))
   U2, S2, V2 = svd(S*V, [s[n1+1], commoninds(U, S)...]; maxdim=maxdim, cutoff=cutoff)#, kwargs...)
-  ALⁿ², (newleftmost2, newleft) =ITensors.directsum(
+  ALⁿ², (temp, new_left_indices[2]) =ITensors.directsum(
     ψ.AL[n1+1], U2, (uniqueinds(ψ.AL[n1+1], U2, ψ.AL[n1+2])..., uniqueinds(ψ.AL[n1+1], U2, ψ.AL[n1])...),
-    (commoninds(U2, U)..., commoninds(U2, S2)...); tags=(previous_tags, next_tags))
-  ALⁿ² *= δ(dag(newleftmost), dag(newleftmost2))
+    (commoninds(U2, U)..., commoninds(U2, S2)...); tags=(reference_tags[1], reference_tags[2]))
+  ALⁿ² *= δ(dag(new_left_indices[1]), dag(temp))
+  new_right_indices[2] = ITensorInfiniteMPS.flip_sign(new_left_indices[2])
 
-  previous_tags = next_tags
-  next_tags = tags(only(uniqueinds(ψ.AL[n1+2], U3, ψ.AL[n1+1])))
   U3, S3, V3 = svd(S2*V2, [s[n1+2], commoninds(U2, S2)...]; maxdim=maxdim, cutoff=cutoff)#, kwargs...)
-  ALⁿ³, (newleft2, newright) =ITensors.directsum(
+  ALⁿ³, (temp, new_left_indices[3]) =ITensors.directsum(
     ψ.AL[n1+2], U3, (uniqueinds(ψ.AL[n1+2], U3, ψ.AL[n1+3])..., uniqueinds(ψ.AL[n1+2], U3, ψ.AL[n1+1])...),
-    (commoninds(U3, U2)..., commoninds(U3, S3)...); tags=(previous_tags, next_tags));
-  ALⁿ³ *= δ(dag(newleft), dag(newleft2))
-
+    (commoninds(U3, U2)..., commoninds(U3, S3)...); tags=(reference_tags[2], reference_tags[3]));
+  ALⁿ³ *= δ(dag(new_left_indices[2]), dag(temp))
 
   NR *= dag(V3)
-  ARⁿ⁴, (newright2,) = ITensors.directsum(
-    ψ.AR[n1+3], dag(NR), uniqueinds(ψ.AR[n1+3], NR), uniqueinds(NR, ψ.AR[n1+3]); tags=(next_tags,)
+  ARⁿ⁴, (new_right_indices[3],) = ITensors.directsum(
+    ψ.AR[n1+3], dag(NR), uniqueinds(ψ.AR[n1+3], NR), uniqueinds(NR, ψ.AR[n1+3]); tags=(reference_tags[3],)
   )
 
-  lⁿ³ = commoninds(ψ.AL[n1 + 2], ψ.C[n1 + 2])
-  rⁿ³ = commoninds(ψ.AR[n1 + 3], ψ.C[n1 + 2])
-  Cⁿ³ = ITensor(dag(newright), dag(newright2))
-  ψCⁿ³ = permute(ψ.C[n1+2], lⁿ³..., rⁿ³...)
-  for I in eachindex(ψ.C[n1+2])
-    v = ψCⁿ³[I]
-    if !iszero(v)
-      Cⁿ³[I] = ψCⁿ³[I]
-    end
-  end
+  Cⁿ³ = δ(dag(new_left_indices[3]), commoninds(ψ.AL[n1 + 2], ψ.C[n1 + 2])) * ψ.C[n1 + 2] *
+    δ(dag(new_right_indices[3]), commoninds(ψ.AR[n1 + 3], ψ.C[n1 + 2]))
+  Cⁿ² = δ(dag(new_left_indices[2]), commoninds(ψ.AL[n1 + 1], ψ.C[n1 + 1])) * ψ.C[n1 + 1] *
+    δ(dag(new_right_indices[2]), commoninds(ψ.AR[n1 + 2], ψ.C[n1 + 1]))
+  Cⁿ¹ = δ(dag(new_left_indices[1]), commoninds(ψ.AL[n1], ψ.C[n1])) *ψ.C[n1] *  δ(dag(new_right_indices[1]), commoninds(ψ.AR[n1 + 1], ψ.C[n1]))
 
-  # Also expand the dimension of the neighboring MPS tensors
-  ALⁿ⁴ = ITensor(dag(newright), uniqueinds(ψ.AL[n1 + 3], ψ.AL[n1 + 2])...)
-  il = only(uniqueinds(ψ.AL[n1 + 3], ALⁿ⁴))
-  ĩl = only(uniqueinds(ALⁿ⁴, ψ.AL[n1 + 3]))
-  for IV in eachindval(inds(ψ.AL[n1 + 3]))
-    ĨV = ITensorInfiniteMPS.replaceind_indval(IV, il => ĩl)
-    v = ψ.AL[n1 + 3][IV...]
-    if !iszero(v)
-      ALⁿ⁴[ĨV...] = v
-    end
-  end
+  ALⁿ⁴ = δ(dag(new_left_indices[3]), l[n1+2]) * ψ.AL[n1 + 3]
+  ARⁿ³ = δ(r[n1+1], new_right_indices[2]) * ψ.AR[n1 + 2] * delta(dag(r[n1+2]), dag(new_right_indices[3]))
+  ARⁿ² = δ(r[n1], new_right_indices[1]) * ψ.AR[n1 + 1] * delta(dag(r[n1+1]), dag(new_right_indices[2]))
+  ARⁿ¹ = ψ.AR[n1] * delta(dag(r[n1]), dag(new_right_indices[1]))
+
+  @assert norm(ALⁿ¹ * Cⁿ¹ - ψ.C[n1-1] * ARⁿ¹) == 0
+  @assert norm(ALⁿ² * Cⁿ² - Cⁿ¹ * ARⁿ²) == 0
+  @assert norm(ALⁿ³ * Cⁿ³ - Cⁿ² * ARⁿ³) == 0
+  @assert norm(ALⁿ⁴ * ψ.C[n1+3] - Cⁿ³ * ARⁿ⁴) == 0
 
 
-  ARⁿ³ = ITensor(dag(newright2), uniqueinds(ψ.AR[n1 + 2], ψ.AR[n1 + 3])...)
-  ir = only(uniqueinds(ψ.AR[n1 + 2], ARⁿ³))
-  ĩr = only(uniqueinds(ARⁿ³, ψ.AR[n1 + 2]))
-  for IV in eachindval(inds(ψ.AR[n1 + 2]))
-    ĨV = ITensorInfiniteMPS.replaceind_indval(IV, ir => ĩr)
-    v = ψ.AR[n1 + 2][IV...]
-    if !iszero(v)
-      ARⁿ³[ĨV...] = v
-    end
-  end
-  ARⁿ³ = δ(r[2], dag(newleft2)) * ARⁿ³
-
-  AR = ψ.AR[n1 + 2] * delta(dag(r[3]), dag(newright2))
-
-
-
-  ARⁿ³ = ITensor(dag(newright2), newleft2, s[n1 + 2])
-  ir = uniqueinds(ψ.AR[n1 + 2], ARⁿ³)
-  ĩr = uniqueinds(ARⁿ³, ψ.AR[n1 + 2])
-  for IV in eachindval(inds(ψ.AR[n1 + 2]))
-    ĨV = ITensorInfiniteMPS.replaceind_indval(IV, ir => ĩr)
-    println(IV)
-    v = ψ.AR[n1 + 2][IV...]
-    if !iszero(v)
-      ARⁿ³[ĨV...] = v
-    end
-  end
-
-
-  newleft2 = ITensors.directsum(commoninds(ψ.AR[n1+1], ψ.AR[n1])..., dag(only(commoninds(S2, V2))))
-  ARⁿ² = ITensor(dag(newleft2), s[n1 + 1], )
-  ir = uniqueinds(ψ.AR[n1 + 1], ARⁿ²)
-  ĩr = uniqueinds(ARⁿ² , ψ.AR[n1 + 1])
-  for IV in eachindval(inds(ψ.AR[n1 + 1]))
-    ĨV = ITensorInfiniteMPS.replaceind_indval(IV, ir => ĩr)
-    v = ψ.AR[n1 + 1][IV...]
-    if !iszero(v)
-      ARⁿ²[ĨV...] = v
-    end
-  end
-
-    CL = combiner(newl; tags=tags(only(lⁿ¹)))
-    CR = combiner(newr; tags=tags(only(rⁿ¹)))
-    ALⁿ¹ *= CL
-    ALⁿ² *= dag(CL)
-    ARⁿ² *= CR
-    ARⁿ¹ *= dag(CR)
-    C = (C * dag(CL)) * dag(CR)
-    return (ALⁿ¹, ALⁿ²), C, (ARⁿ¹, ARⁿ²)
+    return (ALⁿ¹, ALⁿ², ALⁿ³, ALⁿ⁴), (Cⁿ¹, Cⁿ², Cⁿ³), (ARⁿ¹, ARⁿ², ARⁿ³, ARⁿ⁴)
 end
-
-
-
-
 
 
 function subspace_expansion(ψ, H; expansion_space = 2, kwargs...)
@@ -528,7 +476,19 @@ function subspace_expansion(ψ, H; expansion_space = 2, kwargs...)
         AR[n2] = ARⁿ²
       end
     elseif expansion_space == 4
-        ALⁿ¹², Cⁿ¹, ARⁿ¹² = subspace_expansion_four_body(ψ, H, n1; kwargs...)
+        println(n)
+        ALs, Cs, ARs = subspace_expansion_four_body(ψ, H, n1; kwargs...)
+        if N >= expansion_space
+          for x in 0:expansion_space-1
+            AL[n + x] = ALs[x + 1]
+            AR[n + x] = ARs[x + 1]
+          end
+          for x in 0:expansion_space-2
+            C[n + x] = Cs[x + 1]
+          end
+        else
+          error("This for of expansion is not yet implemented")
+        end
     end
     ψ = InfiniteCanonicalMPS(AL, C, AR)
   end
