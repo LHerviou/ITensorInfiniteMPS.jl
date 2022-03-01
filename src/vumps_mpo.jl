@@ -392,6 +392,7 @@ function tdvp_iteration_sequential(
   eL = zeros(N)
   eR = zeros(N)
   for n in 1:N
+    println(n)
     L, eL[n] = left_environment(H, ψ; tol=_solver_tol) #TODO currently computing two many of them
     R, eR[n] = right_environment(H, ψ; tol=_solver_tol) #TODO currently computing two many of them
     if N == 1
