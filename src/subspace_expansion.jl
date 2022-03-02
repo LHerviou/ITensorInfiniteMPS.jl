@@ -4,7 +4,7 @@ function replaceind_indval(IV::Tuple, iĩ::Pair)
 end
 
 function flip_sign(ind::Index{Vector{Pair{QN,Int64}}})
-  space = ind.space
+  space = copy(ind.space)
   for (x, sp) in enumerate(space)
     if length(sp[1][1].name) == 0 || length(sp[1][2].name) == 0
       max_flip = 1
@@ -596,8 +596,9 @@ function subspace_expansion(
 
   dˡ = dim(lⁿ¹)
   dʳ = dim(rⁿ¹)
+
   #@assert dˡ == dʳ
-  if dˡ ≥ maxdim
+  if dˡ ≥ maxdim && dʳ ≥ maxdim
     println(
       "Current bond dimension at bond $n1 is $dˡ while desired maximum dimension is $maxdim, skipping bond dimension increase",
     )
@@ -605,7 +606,8 @@ function subspace_expansion(
     [ψ.C[n1 + x] for x in 0:(expansion_space - 2)],
     [ψ.AR[n1 + x] for x in 0:(expansion_space - 1)]
   end
-  maxdim -= dˡ
+  #TODO Bond dimension control is pretty bad when considering more than two sites. Can it be improved
+  maxdim -= min(dˡ, dʳ)
 
   #NL = ITensorInfiniteMPS.nullspace(ψ.AL[n1], lⁿ¹; atol=atol)
   temp = ψ.AL[n1]
@@ -659,13 +661,8 @@ function subspace_expansion(
 
   NL = dag(NL) * U
   left_steps = order(NL) - 2
-  counter = 0
+  right_ind = only(commoninds(U, S))
   while left_steps != 1
-    if counter == 0
-      right_ind = only(commoninds(U, S))
-    else
-      right_ind = only(commoninds(NL, ALs[n1 + left_steps]))
-    end
     U2, S2, V2 = svd(NL, [s[n1 + left_steps - 1], right_ind]; maxdim=maxdim, cutoff=cutoff)
     ALs[left_steps], (new_left_indices[left_steps - 1], new_left_indices[left_steps]) = ITensors.directsum(
       ψ.AL[n1 + left_steps - 1],
@@ -681,8 +678,8 @@ function subspace_expansion(
       new_left_indices[left_steps]
     )
     NL = V2
+    right_ind = only(commoninds(NL, S2))
     left_steps -= 1
-    counter += 1
   end
   ALs[1], (new_left_indices[1],) = ITensors.directsum(
     ψ.AL[n1],
@@ -700,13 +697,8 @@ function subspace_expansion(
 
   NR = dag(NR) * V
   right_steps = order(NR) - 2
-  counter = 0
+  left_ind = only(commoninds(V, S))
   while right_steps != 1
-    if counter == 0
-      left_ind = only(commoninds(V, S))
-    else
-      left_ind = only(commoninds(NR, ARs[n1 + expansion_space - right_steps - 1]))
-    end
     idx = n1 + expansion_space - right_steps
     U2, S2, V2 = svd(NR, [s[idx], left_ind]; maxdim=maxdim, cutoff=cutoff)
     ARs[idx - n1 + 1], (new_right_indices[idx - n1], new_right_indices[idx - n1 + 1]) = ITensors.directsum(
@@ -724,8 +716,8 @@ function subspace_expansion(
       new_right_indices[idx - n1 + 1]
     )
     NR = V2
+    left_ind = only(commoninds(NR, S2))
     right_steps -= 1
-    counter += 1
   end
   ARs[end], (new_right_indices[end],) = ITensors.directsum(
     ψ.AR[n1 + expansion_space - 1],
@@ -767,12 +759,12 @@ function subspace_expansion(
   end
   ARs[1] = ψ.AR[n1] * δ(dag(r[n1]), dag(new_right_indices[1]))
 
-  #for j = 2:expansion_space-1
+  # for j = 2:expansion_space-1
   #  println(norm(ALs[j]*Cs[j] - Cs[j-1]*ARs[j]))
   #  @assert norm(ALs[j]*Cs[j] - Cs[j-1]*ARs[j])<1e-6
-  #end
-  #@assert norm(ALs[end]*ψ.C[n1+expansion_space-1] - Cs[end]*ARs[end])<1e-6
-  #@assert norm(ALs[1]*Cs[1] - ψ.C[n1-1]*ARs[1])<1e-6
+  # end
+  # @assert norm(ALs[end]*ψ.C[n1+expansion_space-1] - Cs[end]*ARs[end])<1e-6
+  # @assert norm(ALs[1]*Cs[1] - ψ.C[n1-1]*ARs[1])<1e-6
 
   if N < expansion_space
     l1 = only(commoninds(ψ.AL[n1 - 1], ALs[1]))
