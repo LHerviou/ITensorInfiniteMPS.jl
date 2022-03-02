@@ -45,10 +45,7 @@ function (A::AOᴸ)(x)
 end
 
 function apply_local_left_transfer_matrix(
-  Lstart::Vector{ITensor},
-  H::InfiniteMPOMatrix,
-  ψ::InfiniteCanonicalMPS,
-  n_1::Int64,
+  Lstart::Vector{ITensor}, H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS, n_1::Int64
 )
   dₕ = length(Lstart)
   ψ′ = dag(ψ)'
@@ -90,11 +87,7 @@ end
 
 #apply the left transfer matrix n1:n1+nsites(ψ)-1
 function apply_left_transfer_matrix(
-  Lstart::ITensor,
-  m::Int64,
-  H::InfiniteMPOMatrix,
-  ψ::InfiniteCanonicalMPS,
-  n_1::Int64,
+  Lstart::ITensor, m::Int64, H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS, n_1::Int64
 )
   Ltarget = apply_local_left_transfer_matrix(Lstart, m, H, ψ, n_1)
   for j in 1:(nsites(ψ) - 1)
@@ -214,10 +207,7 @@ function apply_local_right_transfer_matrix!(
 end
 
 function apply_local_right_transfer_matrix(
-  Lstart::Vector{ITensor},
-  H::InfiniteMPOMatrix,
-  ψ::InfiniteCanonicalMPS,
-  n_1::Int64,
+  Lstart::Vector{ITensor}, H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS, n_1::Int64
 )
   dₕ = length(Lstart)
   ψ′ = dag(ψ)'
@@ -260,11 +250,7 @@ end
 
 #apply the right transfer matrix n1:n1+nsites(ψ)-1
 function apply_right_transfer_matrix(
-  Lstart::ITensor,
-  m::Int64,
-  H::InfiniteMPOMatrix,
-  ψ::InfiniteCanonicalMPS,
-  n_1::Int64,
+  Lstart::ITensor, m::Int64, H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS, n_1::Int64
 )
   Ltarget = apply_local_right_transfer_matrix(Lstart, m, H, ψ, n_1)
   for j in 1:(nsites(ψ) - 1)
@@ -320,7 +306,9 @@ function right_environment(H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS; tol=1
     end
   end
   if N > 1
-    Rs[N] = apply_local_right_transfer_matrix(translatecell(translater(ψ), Rs[1], 1), H, ψ, N)
+    Rs[N] = apply_local_right_transfer_matrix(
+      translatecell(translater(ψ), Rs[1], 1), H, ψ, N
+    )
     for n in reverse(2:(N - 1))
       Rs[n] = apply_local_right_transfer_matrix(Rs[n + 1], H, ψ, n)
     end
@@ -392,7 +380,6 @@ function tdvp_iteration_sequential(
   eL = zeros(N)
   eR = zeros(N)
   for n in 1:N
-    println(n)
     L, eL[n] = left_environment(H, ψ; tol=_solver_tol) #TODO currently computing two many of them
     R, eR[n] = right_environment(H, ψ; tol=_solver_tol) #TODO currently computing two many of them
     if N == 1

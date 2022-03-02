@@ -50,7 +50,8 @@ using Random
   for multisite_update_alg in ["sequential", "parallel"],
     conserve_qns in [true, false],
     nsites in [1, 2],
-    time_step in [-Inf]
+    time_step in [-Inf],
+    expansion_space in [2]
 
     vumps_kwargs = (
       multisite_update_alg=multisite_update_alg,
@@ -59,7 +60,50 @@ using Random
       outputlevel=0,
       time_step=time_step,
     )
-    subspace_expansion_kwargs = (cutoff=cutoff, maxdim=maxdim)
+    subspace_expansion_kwargs = (
+      cutoff=cutoff, maxdim=maxdim, expansion_space=expansion_space
+    )
+
+    space_ = fill(space_shifted(model, 1; conserve_qns=conserve_qns), nsites)
+    s = infsiteinds("S=1/2", nsites; space=space_)
+    ψ = InfMPS(s, initstate)
+
+    Hmpo = InfiniteMPOMatrix(model, s; model_kwargs...)
+    # Alternate steps of running VUMPS and increasing the bond dimension
+    ψ = tdvp(Hmpo, ψ; vumps_kwargs...)
+    for _ in 1:outer_iters
+      ψ = subspace_expansion(ψ, Hmpo; subspace_expansion_kwargs...)
+      ψ = tdvp(Hmpo, ψ; vumps_kwargs...)
+    end
+
+    @test norm(
+      contract(ψ.AL[1:nsites]..., ψ.C[nsites]) - contract(ψ.C[0], ψ.AR[1:nsites]...)
+    ) ≈ 0 atol = 1e-5
+
+    H = InfiniteITensorSum(model, s; model_kwargs...)
+    energy_infinite = expect(ψ, H)
+    Szs_infinite = [expect(ψ, "Sz", n) for n in 1:nsites]
+
+    @test energy_finite ≈ sum(energy_infinite) / nsites rtol = 1e-4
+    @test Szs_finite[nfinite:(nfinite + nsites - 1)] ≈ Szs_infinite rtol = 1e-3
+  end
+
+  for multisite_update_alg in ["sequential", "parallel"],
+    conserve_qns in [true, false],
+    nsites in [4],
+    time_step in [-Inf],
+    expansion_space in [3, 4]
+
+    vumps_kwargs = (
+      multisite_update_alg=multisite_update_alg,
+      tol=tol,
+      maxiter=maxiter,
+      outputlevel=0,
+      time_step=time_step,
+    )
+    subspace_expansion_kwargs = (
+      cutoff=cutoff, maxdim=maxdim, expansion_space=expansion_space
+    )
 
     space_ = fill(space_shifted(model, 1; conserve_qns=conserve_qns), nsites)
     s = infsiteinds("S=1/2", nsites; space=space_)
