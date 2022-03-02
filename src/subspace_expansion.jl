@@ -23,6 +23,42 @@ function flip_sign(ind::Index{Vector{Pair{QN,Int64}}})
   return Index(space; tags=ind.tags, dir=ind.dir, plev=ind.plev)
 end
 
+#δ, but matching the symmetries. Not sure it does not slow down some things.
+function wδ(indl, indr)
+  if length(indl.space) > length(indr.space)
+    return wδ(indr, indl)
+  end
+  res = ITensor(indl, indr)
+  shift_left = 1
+  visited = zeros(Int64, length(indr.space))
+  for spl in indl.space
+    start_right = 1
+    for (idxr, spr) in enumerate(indr.space)
+      if spl[1] == spr[1] && visited[idxr] == 0
+        for x in 0:(spr[2] - 1)
+          res[shift_left + x, start_right + x] = 1.0
+        end
+        visited[idxr] = 1
+        break
+      else
+        start_right += spr[2]
+      end
+    end
+    shift_left += spl[2]
+  end
+  return res
+end
+
+# il = only(uniqueinds(ψ.AL[n2], ALⁿ²))
+# ĩl = only(uniqueinds(ALⁿ², ψ.AL[n2]))
+# for IV in eachindval(inds(ψ.AL[n2]))
+#   ĨV = replaceind_indval(IV, il => ĩl)
+#   v = ψ.AL[n2][IV...]
+#   if !iszero(v)
+#     ALⁿ²[ĨV...] = v
+#   end
+# end
+
 #space = [QN([(qn.name, -qn.val, qn.modulus) for (y, qn) in enumerate(ind.space[x][1])][1:max_flip]...)  => ind.space[x][2] for x in 1:length(ind.space)]
 #return Index(space, tags = ind.tags, dir = ind.dir, plev = ind.plev)
 #end
@@ -736,28 +772,28 @@ function subspace_expansion(
   #Updating the C matrices
   for j in 1:(expansion_space - 1)
     Cs[j] =
-      δ(dag(new_left_indices[j]), commoninds(ψ.AL[n1 + j - 1], ψ.C[n1 + j - 1])) *
+      wδ(dag(new_left_indices[j]), only(commoninds(ψ.AL[n1 + j - 1], ψ.C[n1 + j - 1]))) *
       ψ.C[n1 + j - 1] *
-      δ(dag(new_right_indices[j]), commoninds(ψ.AR[n1 + j], ψ.C[n1 + j - 1]))
+      wδ(dag(new_right_indices[j]), only(commoninds(ψ.AR[n1 + j], ψ.C[n1 + j - 1])))
   end
   #Expanding the untouched matrices
   for j in (expansion_space ÷ 2 + 1):(expansion_space - 1)
     ALs[j] =
-      δ(l[n1 + j - 2], dag(new_left_indices[j - 1])) *
+      wδ(l[n1 + j - 2], dag(new_left_indices[j - 1])) *
       ψ.AL[n1 + j - 1] *
-      δ(dag(l[n1 + j - 1]), new_left_indices[j])
+      wδ(dag(l[n1 + j - 1]), new_left_indices[j])
   end
   ALs[end] =
-    δ(l[n1 + expansion_space - 2], dag(new_left_indices[end])) *
+    wδ(l[n1 + expansion_space - 2], dag(new_left_indices[end])) *
     ψ.AL[n1 + expansion_space - 1]
 
   for j in 2:(expansion_space ÷ 2)
     ARs[j] =
-      δ(r[n1 + j - 2], new_right_indices[j - 1]) *
+      wδ(r[n1 + j - 2], new_right_indices[j - 1]) *
       ψ.AR[n1 + j - 1] *
-      δ(dag(r[n1 + j - 1]), dag(new_right_indices[j]))
+      wδ(dag(r[n1 + j - 1]), dag(new_right_indices[j]))
   end
-  ARs[1] = ψ.AR[n1] * δ(dag(r[n1]), dag(new_right_indices[1]))
+  ARs[1] = ψ.AR[n1] * wδ(dag(r[n1]), dag(new_right_indices[1]))
 
   # for j = 2:expansion_space-1
   #  println(norm(ALs[j]*Cs[j] - Cs[j-1]*ARs[j]))
@@ -771,12 +807,12 @@ function subspace_expansion(
     new_l1 = translatecell(
       translater(ψ), only(commoninds(ALs[n1 - 1 + N], ALs[n1 + N])), -1
     )
-    ALs[1] *= δ(dag(new_l1), l1)
+    ALs[1] *= wδ(dag(new_l1), l1)
     r1 = translatecell(
       translater(ψ), only(uniqueinds(ARs[N + 1], ARs[N], ψ.AL[n1 + N])), -1
     )
     new_r1 = only(commoninds(ARs[1], ARs[2]))
-    ARs[1] = translatecell(translater(ψ), ARs[N + 1], -1) * δ(new_r1, dag(r1))
+    ARs[1] = translatecell(translater(ψ), ARs[N + 1], -1) * wδ(new_r1, dag(r1))
   end
   #Now fuse sectors
   for j in 1:min(expansion_space - 1, N - 1)
@@ -866,6 +902,9 @@ function subspace_expansion(ψ, H; expansion_space=2, kwargs...)
       C[n + x] = Cs[x + 1]
     end
     ψ = InfiniteCanonicalMPS(AL, C, AR)
+    #if n==1
+    #  return ψ
+    #end
   end
   return ψ
 end
