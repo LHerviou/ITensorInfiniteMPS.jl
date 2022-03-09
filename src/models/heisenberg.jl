@@ -18,6 +18,14 @@ function ITensors.MPO(::Model"heisenberg", s)
   return MPO(os, s)
 end
 
+function ITensors.ITensor(::Model"heisenberg", s1::Index, s2::Index)
+  os = OpSum()
+  os .+= 0.5, "S+", 1, "S-", 2
+  os .+= 0.5, "S-", 1, "S+", 2
+  os .+= "Sz", 1, "Sz", 2
+  return  prod(MPO(os, [s1, s2]))
+end
+
 """
     reference(::Model"heisenberg", ::Observable"energy"; N)
 
