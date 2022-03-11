@@ -48,6 +48,7 @@ include("subspace_expansion.jl")
 include("vumps_localham.jl")
 include("vumps_mpo.jl")
 include("models/fqheauxiliaries/generate_hamiltonian.jl")
+include("idmrg_environments.jl")
 
 export Cell,
   CelledVector,
@@ -77,7 +78,11 @@ export Cell,
   vumps,
   ⊕,
   ⊗,
-  ×
+  ×,
+  iDMRGStructure,
+  idmrg_step,
+  idmrg,
+  advance_environments
 
 function __init__()
   # This is used for debugging using visualizations

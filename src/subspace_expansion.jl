@@ -35,7 +35,7 @@ function wδ(indl, indr)
     start_right = 1
     for (idxr, spr) in enumerate(indr.space)
       if spl[1] == spr[1] && visited[idxr] == 0
-        for x in 0:(spr[2] - 1)
+        for x in 0:min(spr[2] - 1, spl[2] - 1)
           res[shift_left + x, start_right + x] = 1.0
         end
         visited[idxr] = 1
