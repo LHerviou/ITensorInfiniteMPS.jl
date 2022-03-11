@@ -45,29 +45,7 @@ import ITensors: op
 op(::OpName"Zero", ::SiteType, s::Index) = ITensor(s', dag(s))
 
 function InfiniteMPOMatrix(model::Model, s::CelledVector; kwargs...)
-  N = length(s)
-  temp_H = InfiniteITensorSum(model, s; kwargs...)
-  range_H = nrange(temp_H)[1]
-  ls = CelledVector([Index(1, "Link,c=1,n=$n") for n in 1:N])
-  mpos = [Matrix{ITensor}(undef, 1, 1) for i in 1:N]
-  for j in 1:N
-    Hmat = fill(op("Zero", s[j]), range_H + 1, range_H + 1)
-    identity = op("Id", s[j])
-    Hmat[1, 1] = identity
-    Hmat[end, end] = identity
-    for n in 0:(range_H - 1)
-      idx = findfirst(x -> x == j, findsites(temp_H[j - n]; ncell=N))
-      if isnothing(idx)
-        Hmat[range_H + 1 - n, range_H - n] = identity
-      else
-        Hmat[range_H + 1 - n, range_H - n] = temp_H[j - n][idx]#replacetags(linkinds, temp_H[j - n][idx], "Link, l=$n", tags(ls[j-1]))
-      end
-    end
-    mpos[j] = Hmat
-    #mpos[j] += dense(Hmat) * setelt(ls[j-1] => total_dim) * setelt(ls[j] => total_dim)
-  end
-  #return mpos
-  return InfiniteMPOMatrix(mpos)
+  return InfiniteMPOMatrix(model, s, translater(s); kwargs...)
 end
 
 function InfiniteMPOMatrix(model::Model, s::CelledVector, translater::Function; kwargs...)

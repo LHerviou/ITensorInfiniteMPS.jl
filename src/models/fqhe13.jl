@@ -26,16 +26,5 @@ function ITensors.MPO(::Model"fqhe_2b_pot", s::CelledVector, n::Int64; Ly, Vs, p
   end
   opsum = generate_Hamiltonian(opt)
 
-  return MPO(opsum, [s[x] for x in n:(n + range_model)]) #modification to allow for more than two sites per term in the Hamiltonians
+  return MPO(opsum, [s[x] for x in n:(n + range_model)])
 end
-#
-#
-# opt = optimize_coefficients(coeff, prec = prec)
-# sorted_opt = sort_by_configuration(opt);
-# println(string("Number of terms in the dictionnary: ", length(opt)))
-# sites = siteinds("Fermion", N, conserve_qns = true);
-# Hs = Dict()
-# for (k, v) in sorted_opt
-#   ampo = generate_Hamiltonian(v);
-#   Hs[k] = MPO(ampo, sites);
-#   #fix_QN_bug!(Hs[k])
