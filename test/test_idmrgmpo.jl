@@ -45,6 +45,14 @@ using Random
   advance_environments(dmrgStruc)
   inf_ener, _ = idmrg(dmrgStruc)
 
+  dmrgStruc2 = iDMRGStructure(ψ, Hmpo, dim_dmrg)
+  advance_environments(dmrgStruc2)
+  inf_ener2, _ = idmrg(dmrgStruc2, mixer = true, α = 0.1)
+  inf_ener2, _ = idmrg(dmrgStruc2, mixer = true, α = 0.01)
+  inf_ener2, _ = idmrg(dmrgStruc2, mixer = true, α = 0.001)
+  inf_ener2, _ = idmrg(dmrgStruc2, mixer = true, α = 0)
+
+
 
 
 

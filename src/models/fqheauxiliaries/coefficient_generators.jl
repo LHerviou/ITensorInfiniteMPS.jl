@@ -471,7 +471,7 @@ function build_two_body_coefficient_pseudopotential(;
       round(r; digits=3),
       ", Lx =",
       round(Lx; digits=3),
-      "and Ly =",
+      " and Ly =",
       round(Ly; digits=3),
     ),
   )
@@ -561,7 +561,7 @@ function build_two_body_coefficient_pseudopotential_TI(;
       round(r; digits=3),
       ", Lx =",
       round(Lx; digits=3),
-      "and Ly =",
+      " and Ly =",
       round(Ly; digits=3),
     ),
   )
@@ -655,7 +655,7 @@ function build_three_body_pseudopotentials(;
       round(r; digits=3),
       ", Lx =",
       round(Lx; digits=3),
-      "and Ly =",
+      " and Ly =",
       round(Ly; digits=3),
     ),
   )
@@ -779,7 +779,7 @@ function build_four_body_pseudopotentials(;
       round(r; digits=3),
       ", Lx =",
       round(Lx; digits=3),
-      "and Ly =",
+      " and Ly =",
       round(Ly; digits=3),
     ),
   )
