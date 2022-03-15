@@ -158,6 +158,15 @@ function ortho_polar(AC, C)
   return noprime(UAC) * noprime(dag(UC))
 end
 
+function ortho_polar(AC, C)
+  UAC, SAC, VAC = svd(AC, uniqueinds(AC, C))
+  UAC = UAC * wδ(inds(SAC)...) * VAC
+  UC, _ = polar(C, commoninds(C, AC))
+  UC, SC, VC = svd(C, commoninds(C, AC))
+  UC = UC * wδ(inds(SC)...) * VC
+  return noprime(UAC) * noprime(dag(UC))
+end
+
 
 function diag_ortho_polar(AC, C)
   UAC, _ = polar(AC, uniqueinds(AC, C))
