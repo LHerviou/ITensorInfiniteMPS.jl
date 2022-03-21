@@ -152,20 +152,33 @@ function ortho_overlap(AC, C)
   return noprime(AL)
 end
 
-function ortho_polar(AC, C)
-  UAC, _ = polar(AC, uniqueinds(AC, C))
-  UC, _ = polar(C, commoninds(C, AC))
+function ITensorInfiniteMPS.ortho_polar(AC, C)
+  UAC, _ = ITensors.polar(AC, uniqueinds(AC, C))
+  UC, _ = ITensors.polar(C, commoninds(C, AC))
   return noprime(UAC) * noprime(dag(UC))
 end
+# 
+# function ITensorInfiniteMPS.ortho_polar(AC, C)
+#   UAC, C2 = ITensors.polar(AC, uniqueinds(AC, C), tags = tags(only(commoninds(AC, C))), dir = ITensors.In)
+#   newU, newC = noprime(UAC*ITensorInfiniteMPS.wδ(only(commoninds(C2, UAC)),dag(only(uniqueinds(C, C2))))), noprime(ITensorInfiniteMPS.wδ(dag(only(commoninds(C2, UAC))), only(uniqueinds(C, C2)))*C2)
+#   println(norm(newU*newC - AC))
+#   return newU, newC
+# end
+#
+# function ITensorInfiniteMPS.ortho_polar(AC, C)
+#   UAC, s, v = ITensors.svd(AC, uniqueinds(AC, C), lefttags = tags(only(commoninds(AC, C))))
+#   #UC, _ = ITensors.polar(C, uniqueinds(C, AC))
+#   return UAC, s*v, wδ(inds(s)...)*v
+# end
 
-function ortho_polar(AC, C)
-  UAC, SAC, VAC = svd(AC, uniqueinds(AC, C))
-  UAC = UAC * wδ(inds(SAC)...) * VAC
-  UC, _ = polar(C, commoninds(C, AC))
-  UC, SC, VC = svd(C, commoninds(C, AC))
-  UC = UC * wδ(inds(SC)...) * VC
-  return noprime(UAC) * noprime(dag(UC))
-end
+# function ortho_polar(AC, C)
+#   UAC, SAC, VAC = svd(AC, uniqueinds(AC, C))
+#   UAC = UAC * wδ(inds(SAC)...) * VAC
+#   UC, _ = polar(C, commoninds(C, AC))
+#   UC, SC, VC = svd(C, commoninds(C, AC))
+#   UC = UC * wδ(inds(SC)...) * VC
+#   return noprime(UAC) * noprime(dag(UC))
+# end
 
 
 function diag_ortho_polar(AC, C)

@@ -98,6 +98,8 @@ end
 
 function build_left_mixer(L::Vector{ITensor}, Hmpo::Matrix{ITensor}, ψ::ITensor; maxdim = 20, cutoff = 1e-8, α = 1.)
   res = ψ
+  #maxdim = min(maxdim, 4*dim(only(uniqueinds(ψ, Hmpo[1, 1], L[1]))))
+  #println(maxdim)
   for j in reverse(2:length(L))
     temp = noprime(L[j] * Hmpo[j, j-1] * ψ)
     if order(temp) > 3
@@ -115,6 +117,43 @@ function build_left_mixer(L::Vector{ITensor}, Hmpo::Matrix{ITensor}, ψ::ITensor
       end
   end
   return res
+end
+
+
+function build_left_mixer(L::Vector{ITensor}, Hmpo::Matrix{ITensor}, ψ::ITensor; maxdim = 20, cutoff = 1e-8, α = 1.)
+  res = ψ
+  maxdim = min(maxdim, 2*dim(only(commoninds(ψ, L[1]))))
+  #println(maxdim)
+  rind = only(uniqueinds(ψ, L[1], Hmpo[1, 1]))
+  bd = δ(dag(rind), prime(rind))
+  for j in reverse(2:length(L))
+    temp = noprime(L[j] * Hmpo[j, j-1] * ψ)
+    if order(temp) > 3
+      l = combiner(only(uniqueinds(ψ, L[j], Hmpo[j, j-1])), only(uniqueinds(temp, ψ, L[j])), dir = ITensors.In)
+      temp*=l
+    end
+      res, (new_ind, )= ITensors.directsum(res, α*temp,
+       uniqueinds(res, temp) ,
+        uniqueinds(temp, res ); tags = [string(tags(only(uniqueinds(ψ, L[j], Hmpo[j, j-1]))))[2:end-1]])
+        l = combiner(only(uniqueinds(res, ψ)), tags = tags(only(uniqueinds(ψ, L[j], Hmpo[j, j-1]))))
+        res*=l
+        bd *= wδ(dag(new_ind), rind)
+        bd *= dag(l)
+        rind = only(commoninds(res, bd))
+        if maxdim < dim(new_ind) || j==2
+          res, v, p = svd(res, commoninds(ψ, res), lefttags = tags(only(uniqueinds(ψ, res)) ), maxdim = maxdim, cutoff = cutoff)
+          #println(inds(res))
+          #res, p = polar(res, uniqueinds(res, bd), maxdim = maxdim, tags = tags(only(uniqueinds(ψ, L[j], Hmpo[j, j-1]))))
+          #println(inds(res))
+          #res *= v
+          bd *= v*p
+          #println("Blah")
+          #println(res*dag(res))
+          #println(inds(bd))
+          rind = only(commoninds(res, bd))
+        end
+  end
+  return res, noprime(bd)#, dag(l) * wδ(dag(new_ind), only(unique()))
 end
 
 
@@ -376,15 +415,46 @@ function idmrg_step_with_mixer(iDM::iDMRGStructure; solver_tol = 1e-8, maxdim = 
     err += 1 - norm(S2)
     S2 = S2 / norm(S2)
     if α != 0
-      temp_mix = build_left_mixer(effective_L, iDM.Hmpo[start+j-1], U2*S2; α = α)
-      Up, Sp, Vp =  svd(temp_mix, commoninds(temp_mix, iDM.ψ.AL[start+j-1]); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(iDM.ψ.AL[start+j-1], iDM.ψ.AL[start+j]))),
+      temp_mix, bd= build_left_mixer(effective_L, iDM.Hmpo[start+j-1], U2; α = α, maxdim = maxdim)
+      #Up, Sp, Vp =  svd(temp_mix, commoninds(temp_mix, iDM.ψ.AL[start+j-1]); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(iDM.ψ.AL[start+j-1], iDM.ψ.AL[start+j]))),
+      #    righttags = tags(only(commoninds(iDM.ψ.AL[start+j-1], iDM.ψ.AL[start+j]))))
+      #Up2, Sp2, Vp2 = svd(Vp * wδ(dag(only(uniqueinds(Vp, Sp))), only(commoninds(S2, V2))) *V2, commoninds(Vp, Sp); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(Up, Sp))),
+      #    righttags = tags(only(commoninds(Sp, Vp))))d
+
+      UU, iDM.ψ.C[start+j-1], iDM.ψ.AR[start+j] = ITensors.qr(bd * S2 * V2, uniqueinds(bd, S2);
+        mindim = 2, maxdim=maxdim, lefttags = tags(only(commoninds(iDM.ψ.AL[start+j-1], iDM.ψ.AL[start+j]))),
           righttags = tags(only(commoninds(iDM.ψ.AL[start+j-1], iDM.ψ.AL[start+j]))))
-      Sp = Sp / norm(Sp)
-      iDM.ψ.AL[start+j-1] =  Up
-      iDM.ψ.C[start+j-1] =  Sp
-      iDM.ψ.AR[start+j-1], _ = diag_ortho_polar(iDM.ψ.AL[start+j-1] * iDM.ψ.C[start+j-1], iDM.ψ.C[start+j-2])
-      iDM.ψ.AR[start+j] = Vp*wδ(dag(only(uniqueinds(Vp, Sp))), only(commoninds(S2, V2))) *V2
-      iDM.ψ.AL[start+j], _ = diag_ortho_polar(iDM.ψ.C[start+j-1] * iDM.ψ.AR[start+j], iDM.ψ.C[start+j])
+      iDM.ψ.AL[start+j-1] = temp_mix*UU
+      println(inds(UU))
+      #iDM.ψ.AL[start+j-1] =  temp_mix#Up
+      #iDM.ψ.C[start+j-1] =  bd*S2#Sp #* wδ(inds(Up2)...) * wδ(inds(Sp2)...)
+      #println(inds(iDM.ψ.AL[start+j-1]))
+      #println(inds(iDM.ψ.C[start+j-1]))
+      #println(inds(Vp2))
+      #println("Norm")
+      #println(norm(iDM.ψ.C[start+j-1]))
+    #  try
+      #temp = wδ(only(commoninds(iDM.ψ.C[start+j-2], iDM.ψ.AL[start+j-2])), dag(only(uniqueinds(iDM.ψ.C[start+j-2], iDM.ψ.AL[start+j-2]))))
+      iDM.ψ.AR[start+j-1], = diag_ortho_polar(iDM.ψ.AL[start+j-1] * iDM.ψ.C[start+j-1], iDM.ψ.C[start+j-2])
+
+      #iDM.ψ.AR[start+j-2] *= temp * dag(te)
+      #println(inds(iDM.ψ.AR[start+j-2]))
+        #println(inds(iDM.ψ.C[start+j-2]))
+        #println(inds(iDM.ψ.C[start+j-1]))
+    #  catch e
+    #    iDM.ψ.AR[start+j-1], iDM.ψ.C[start+j-2] = diag_ortho_polar(iDM.ψ.AL[start+j-1] * iDM.ψ.C[start+j-1], iDM.ψ.C[start+j-2])
+    #  end
+    #iDM.ψ.AR[start+j] = V2#Vp*wδ(dag(only(uniqueinds(Vp, Sp))), only(commoninds(S2, V2))) *V2
+      #println(dim.(inds(iDM.ψ.AR[start+j])))
+    #  try
+  #  temp = wδ(only(commoninds(iDM.ψ.C[start+j], iDM.ψ.AR[start+j+1])), dag(only(uniqueinds(iDM.ψ.C[start+j], iDM.ψ.AR[start+j+1]))))
+        iDM.ψ.AL[start+j], = diag_ortho_polar(iDM.ψ.C[start+j-1] * iDM.ψ.AR[start+j], iDM.ψ.C[start+j])
+  #      iDM.ψ.AL[start+j+1] *= temp * dag(te)
+  #      println(inds(iDM.ψ.AL[start+j+1]))
+
+    #  catch
+    #    iDM.ψ.AL[start+j], iDM.ψ.C[start+j] = diag_ortho_polar(iDM.ψ.C[start+j-1] * iDM.ψ.AR[start+j], iDM.ψ.C[start+j])
+    #  end
     else
       iDM.ψ.AL[start+j-1] =  U2
       iDM.ψ.C[start+j-1] =  S2
@@ -392,11 +462,11 @@ function idmrg_step_with_mixer(iDM::iDMRGStructure; solver_tol = 1e-8, maxdim = 
       iDM.ψ.AR[start+j-1], _ = diag_ortho_polar(iDM.ψ.AL[start+j-1] * iDM.ψ.C[start+j-1], iDM.ψ.C[start+j-2])
       iDM.ψ.AL[start+j], _ = diag_ortho_polar(iDM.ψ.C[start+j-1] * V2, iDM.ψ.C[start+j])
     end
-    # println(start+ j -1)
-    # evaluate_unitarity_left(iDM.ψ, start+j-1)
-    # evaluate_unitarity_right(iDM.ψ, start+j-1)
-    # evaluate_unitarity_left(iDM.ψ, start+j)
-    # evaluate_unitarity_right(iDM.ψ, start+j)
+    #println(start+ j -1)
+    #evaluate_unitarity_left(iDM.ψ, start+j-1)
+    #evaluate_unitarity_right(iDM.ψ, start+j-1)
+    #evaluate_unitarity_left(iDM.ψ, start+j)
+    #evaluate_unitarity_right(iDM.ψ, start+j)
     if j != N-1
       apply_mpomatrix_left!(effective_L, iDM.Hmpo[start+j-1], iDM.ψ.AL[start+j-1])
     end
