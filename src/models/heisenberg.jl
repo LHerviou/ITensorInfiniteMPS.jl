@@ -1,4 +1,4 @@
-function ITensors.OpSum(::Model"heisenberg", n1, n2)
+function ITensors.OpSum(::Model"heisenberg", n1, n2; kwargs...)
   opsum = OpSum()
   opsum += 0.5, "S+", n1, "S-", n2
   opsum += 0.5, "S-", n1, "S+", n2
@@ -7,7 +7,7 @@ function ITensors.OpSum(::Model"heisenberg", n1, n2)
 end
 
 # H = Σⱼ (½ S⁺ⱼS⁻ⱼ₊₁ + ½ S⁻ⱼS⁺ⱼ₊₁ + SᶻⱼSᶻⱼ₊₁)
-function ITensors.MPO(::Model"heisenberg", s)
+function ITensors.MPO(::Model"heisenberg", s; kwargs...)
   N = length(s)
   os = OpSum()
   for j in 1:(N - 1)

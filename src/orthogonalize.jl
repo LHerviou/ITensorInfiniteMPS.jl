@@ -157,3 +157,10 @@ function ortho_polar(AC, C)
   UC, _ = polar(C, commoninds(C, AC))
   return noprime(UAC) * noprime(dag(UC))
 end
+
+
+
+function diag_ortho_polar(AC, C)
+  UAC, _ = polar(AC, uniqueinds(AC, C))
+  return noprime(UAC) * dag(δ(inds(C)...)  )
+end

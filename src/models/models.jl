@@ -46,6 +46,10 @@ function ITensors.ITensor(model::Model, s::CelledVector, n::Int64; kwargs...)
   return prod(MPO(model, s, n; kwargs...)) #modification to allow for more than two sites per term in the Hamiltonians
 end
 
+function ITensors.ITensor(model::Model, is::Union{Vector, Tuple}; kwargs...)
+  return prod(MPO(model, is; kwargs))
+end
+
 # Helper function to make an MPO
 import ITensors: op
 op(::OpName"Zero", ::SiteType, s::Index) = ITensor(s', dag(s))

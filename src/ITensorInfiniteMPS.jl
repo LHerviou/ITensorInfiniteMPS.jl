@@ -46,9 +46,11 @@ include("nullspace.jl")
 include("subspace_expansion.jl")
 include("vumps_localham.jl")
 include("vumps_mpo.jl")
+include("idmrg_mpomatrix.jl")
 
 export Cell,
   CelledVector,
+  iDMRGStructure,
   InfiniteMPS,
   InfiniteCanonicalMPS,
   InfMPS,
@@ -63,6 +65,8 @@ export Cell,
   Model,
   @Observable_str,
   Observable,
+  advance_environments,
+  idmrg,
   input_inds,
   infinitemps_approx,
   infsiteinds,
