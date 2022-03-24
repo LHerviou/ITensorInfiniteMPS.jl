@@ -158,9 +158,62 @@ function ortho_polar(AC, C)
   return noprime(UAC) * noprime(dag(UC))
 end
 
-
-
 function diag_ortho_polar(AC, C)
   UAC, _ = polar(AC, uniqueinds(AC, C))
   return noprime(UAC) * dag(δ(inds(C)...)  )
+end
+
+
+function diag_ortho_polar_both(AC, C)
+  UAC, Cbis = polar(AC, uniqueinds(AC, C))
+  new_ind = flip_sign(only(commoninds(Cbis, UAC)))
+  return noprime(UAC * wδ(only(commoninds(Cbis, UAC)), new_ind)) , noprime(Cbis * wδ(only(commoninds(UAC, Cbis)), dag(new_ind) ))
+end
+
+
+
+function flip_sign(ind::Index{Vector{Pair{QN,Int64}}})
+  space = copy(ind.space)
+  for (x, sp) in enumerate(space)
+    if length(sp[1][1].name) == 0 || length(sp[1][2].name) == 0
+      max_flip = 1
+    elseif length(sp[1][3].name) == 0
+      max_flip = 2
+    elseif length(sp[1][4].name) == 0
+      max_flip = 3
+    else
+      max_flip = 4
+    end
+    space[x] =
+      QN(
+        [(qn.name, -qn.val, qn.modulus) for (y, qn) in enumerate(ind.space[x][1])][1:max_flip]...,
+      ) => ind.space[x][2]
+  end
+  return Index(space; tags=ind.tags, dir=ind.dir, plev=ind.plev)
+end
+
+#δ, but matching the symmetries. Not sure it does not slow down some things.
+function wδ(indl, indr)
+  if length(indl.space) > length(indr.space)
+    return wδ(indr, indl)
+  end
+  res = ITensor(indl, indr)
+  shift_left = 1
+  visited = zeros(Int64, length(indr.space))
+  for spl in indl.space
+    start_right = 1
+    for (idxr, spr) in enumerate(indr.space)
+      if spl[1]*indl.dir == -spr[1]*indr.dir && visited[idxr] == 0
+        for x in 0:min(spl[2] - 1, spr[2] - 1)
+          res[shift_left + x, start_right + x] = 1.0
+        end
+        visited[idxr] = 1
+        break
+      else
+        start_right += spr[2]
+      end
+    end
+    shift_left += spl[2]
+  end
+  return res
 end

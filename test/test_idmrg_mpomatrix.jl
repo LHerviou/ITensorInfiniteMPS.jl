@@ -143,7 +143,7 @@ end
     dmrgStruc = iDMRGStructure(ψ, Hmpo, dim_dmrg)
     advance_environments(dmrgStruc)
     advance_environments(dmrgStruc)
-    inf_ener, _ = idmrg(dmrgStruc, nb_iterations = 100, maxdim = 40)
+    inf_ener, _ = idmrg(dmrgStruc, nb_iterations = 100, maxdim = 40, output_level = 1)
     Szs_infinite = [expect(dmrgStruc.ψ, "Sz", n) for n in 1:nsite]
 
     @test energy_finite ≈ inf_ener rtol = 1e-4

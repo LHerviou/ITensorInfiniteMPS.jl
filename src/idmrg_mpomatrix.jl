@@ -237,7 +237,7 @@ function advance_environments(H::iDMRGStructure{InfiniteMPOMatrix})
   end
 end
 
-function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, maxdim = 20, cutoff = 1e-10)
+function idmrg_step_noupdate_sideC(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, maxdim = 20, cutoff = 1e-10)
   N = nsites(iDM)
   nb_site = dmrg_sites(iDM)
   if nb_site != N
@@ -275,6 +275,84 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, m
   end
   for j in reverse(nb_site÷2+1:nb_site)
     apply_mpomatrix_right!(iDM.R, iDM.Hmpo[start+j-1], iDM.ψ.AR[start+j-1])
+    iDM.R[end] -= local_ener[1]/N * denseblocks(δ(inds(iDM.R[end])...))
+  end
+  if start == 1
+    for j in 1:length(iDM.R)
+      iDM.R[j]= translatecell(translater(iDM), iDM.R[j], 1)
+    end
+  else
+    for j in 1:length(iDM.R)
+      iDM.L[j]= translatecell(translater(iDM), iDM.L[j], -1)
+    end
+  end
+  iDM.counter+=nb_site÷2
+  return local_ener[1]/N, err
+end
+
+
+function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, maxdim = 20, cutoff = 1e-10)
+  N = nsites(iDM)
+  nb_site = dmrg_sites(iDM)
+  if nb_site != N
+    error("iDMRG with a step size different than the unit cell has not been implemented")
+  end
+  start = mod1(iDM.counter, N)
+  starting_state = iDM.ψ.AL[start] * iDM.ψ.C[start] * iDM.ψ.AR[start+1]
+  for j = 3:nb_site
+    starting_state *= iDM.ψ.AR[start+j-1]
+  end
+  local_ener, new_x = eigsolve(iDM, starting_state, 1, :SR; ishermitian=true, tol=solver_tol)
+  U2, S2, V2 = svd(new_x[1], commoninds(new_x[1], iDM.ψ.AL[start]); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start+1]))),
+  righttags = tags(only(commoninds(iDM.ψ.AR[start+1], iDM.ψ.AR[start]))))
+  err = 1 - norm(S2)
+  S2 = S2 / norm(S2)
+  iDM.ψ.AL[start] = U2
+  #iDM.ψ.AR[start] = diag_ortho_polar(U2 * S2, iDM.ψ.C[start-1])
+  temp_R, temp_C = diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start-1])
+  #iDM.ψ.AL[start - 1] *= wδ(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start-1])), only(uniqueinds(temp_C, temp_R)))
+  iDM.ψ.AR[start - 1] *= wδ(only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start-1])), only(commoninds(temp_C, temp_R)))
+  iDM.ψ.AR[start] = temp_R
+  iDM.ψ.C[start-1] = temp_C
+  iDM.ψ.C[start] = S2
+  #error()
+  for j in 2:nb_site - 1
+    new_x = S2 * V2
+    linktags = tags(only(commoninds(iDM.ψ.AL[start+j-1], iDM.ψ.AL[start+j])))
+    U2, S2, V2 = svd(new_x, (only(commoninds(new_x, iDM.ψ.AL[start+j-1])), only(commoninds(new_x, iDM.ψ.AL[start+j-2])));
+      maxdim=maxdim, cutoff=cutoff, lefttags = linktags, righttags = linktags)
+    err += 1 - norm(S2)
+    S2 = S2 / norm(S2)
+    iDM.ψ.AL[start+j-1] = U2
+    temp_R, temp_C = diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start+j-2])
+    iDM.ψ.AR[start+j-2] *= wδ(dag(only(uniqueinds(iDM.ψ.AR[start+j-2], iDM.ψ.AL[start+j-2], iDM.ψ.AR[start+j-3]))), only(commoninds(temp_C, temp_R)))
+    iDM.ψ.AR[start+j-1] = temp_R
+    iDM.ψ.C[start+j-2] = temp_C
+    iDM.ψ.C[start+j-1] = S2
+  end
+  adjust_right = wδ(dag(only(uniqueinds(V2, S2, iDM.ψ.AR[start+nb_site-1]))), dag(only(uniqueinds(iDM.ψ.AR[start+nb_site], iDM.ψ.AL[start+nb_site], iDM.ψ.C[start+nb_site]))))
+  iDM.ψ.AR[start+nb_site-1] = V2 *  adjust_right
+  temp = δ(only(uniqueinds(iDM.ψ.AR[start+nb_site], iDM.ψ.AL[start+nb_site], iDM.ψ.C[start+nb_site])), only(commoninds( iDM.ψ.C[start+nb_site], iDM.ψ.AL[start+nb_site])) )
+  temp_R, temp_C = diag_ortho_polar_both(S2 * iDM.ψ.AR[start+nb_site-1], temp)
+  iDM.ψ.AL[start+nb_site-1] = temp_R
+  iDM.ψ.C[start+nb_site-1] = temp_C
+  adjust_left = wδ(only(commoninds(temp_C, temp_R)), dag(only(uniqueinds(iDM.ψ.AL[start+nb_site], iDM.ψ.AL[start+nb_site+1], iDM.ψ.AR[start+nb_site]))) )
+  iDM.ψ.AL[start+nb_site] *= adjust_left
+  #iDM.ψ.AL[start+nb_site-1] = diag_ortho_polar_both(S2 * V2, iDM.ψ.C[start+nb_site-1])
+  for j in 1:nb_site÷2
+    if j == 1
+      apply_mpomatrix_left!(iDM.L, iDM.Hmpo[start+j-1],translatecell(translater(iDM), dag(adjust_left), -1)*iDM.ψ.AL[start+j-1])
+    else
+      apply_mpomatrix_left!(iDM.L, iDM.Hmpo[start+j-1], iDM.ψ.AL[start+j-1])
+    end
+    iDM.L[1] -= local_ener[1]/N * denseblocks(δ(inds(iDM.L[1])...))
+  end
+  for j in reverse(nb_site÷2+1:nb_site)
+    if j == nb_site
+      apply_mpomatrix_right!(iDM.R, iDM.Hmpo[start+j-1], dag(adjust_right)*iDM.ψ.AR[start+j-1])
+    else
+      apply_mpomatrix_right!(iDM.R, iDM.Hmpo[start+j-1], iDM.ψ.AR[start+j-1])
+    end
     iDM.R[end] -= local_ener[1]/N * denseblocks(δ(inds(iDM.R[end])...))
   end
   if start == 1
