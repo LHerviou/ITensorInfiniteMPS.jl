@@ -66,7 +66,7 @@ function apply_mpomatrix_left!(L::Vector{ITensor}, Hmpo::Matrix{ITensor})
       if isempty(L[j]) || isempty(Hmpo[j, k])
         continue
       end
-      if !init[k] || isempty(L[k]) || k == j
+      if !init[k] || isempty(L[k])
         L[k] = L[j] * Hmpo[j, k]
         init[k] = true
       else
@@ -76,7 +76,7 @@ function apply_mpomatrix_left!(L::Vector{ITensor}, Hmpo::Matrix{ITensor})
   end
   for j in 1:length(L)
    if !init[j]
-      L[j] = ITensor(inds(L[j])...) * Hmpo[j, j]
+      L[j] = ITensor(Float64, inds(L[j])..., inds(Hmpo[j, j])...)
     end
   end
 end
@@ -502,6 +502,17 @@ function build_local_hamiltonian_2(H::InfiniteMPOMatrix, L::Vector{ITensor}, R::
   return effectiveHam(temp)
 end
 
+
+
+function build_local_hamiltonian_3(temp_H::Matrix{ITensor}, L::Vector{ITensor}, R::Vector{ITensor})
+  tempL = copy(L)
+  @disable_warn_order apply_mpomatrix_left!(tempL, temp_H)
+  @disable_warn_order temp = tempL[1] *  R[1]
+  for j in 2:length(tempL)
+    @disable_warn_order temp += tempL[j] * R[j]
+  end
+  return effectiveHam(temp)
+end
 
 
 
