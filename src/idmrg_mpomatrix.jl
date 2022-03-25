@@ -12,16 +12,6 @@ dmrg_sites(IDM::iDMRGStructure) = IDM.dmrg_sites
 Base.copy(iDM::iDMRGStructure) = iDMRGStructure{typeof(iDM.Hmpo)}(copy(iDM.ψ), iDM.Hmpo, copy(iDM.L), copy(iDM.R), iDM.counter, iDM.dmrg_sites)
 
 
-struct temporaryHamiltonian
-  effectiveL::Vector{ITensor}
-  effectiveR::Vector{ITensor}
-  Hmpo::InfiniteMPOMatrix
-  nref::Int64 #leftmostsite
-end
-
-
-
-
 function iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix, dmrg_sites::Int64)
   N = nsites(ψ) #dmrg_sites
   l = only(commoninds(ψ.AL[0], ψ.AL[1]))
@@ -56,6 +46,75 @@ iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix) = iDMRGStructu
 iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix, L::Vector{ITensor}, R::Vector{ITensor}, dmrg_sites::Int64) = iDMRGStructure{InfiniteMPOMatrix}(copy(ψ), Hmpo, L, R, 1, dmrg_sites)
 iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix, L::Vector{ITensor}, R::Vector{ITensor}) = iDMRGStructure{InfiniteMPOMatrix}(copy(ψ), Hmpo, L, R, 1, 2)
 iDMRGStructure(Hmpo::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS) = iDMRGStructure{InfiniteMPOMatrix}(ψ, Hmpo)
+
+function (H::iDMRGStructure{InfiniteMPOMatrix})(x)
+  n = order(x) - 2
+  L = H.L
+  R = H.R
+  start = mod1(H.counter, nsites(H))
+  L = [L[j] * x for j in 1:length(L)]
+  for j in 0:n-1
+    apply_mpomatrix_left!(L, H.Hmpo[start+j])
+  end
+  result = L[1]*R[1]
+  for j = 2:length(L)
+    result+=L[j]*R[j]
+  end
+  return noprime(result)
+end
+
+struct temporaryHamiltonian
+  effectiveL::Vector{ITensor}
+  effectiveR::Vector{ITensor}
+  Hmpo::InfiniteMPOMatrix
+  nref::Int64 #leftmostsite
+end
+
+function (H::temporaryHamiltonian)(x)
+  n = order(x) - 2
+  L = [H.effectiveL[j] * x for j in 1:length(H.effectiveL)]
+  for j in 0:n-1
+    apply_mpomatrix_left!(L, H.Hmpo[H.nref+j])
+  end
+  result = L[1]*H.effectiveR[1]
+  for j = 2:length(L)
+    result+=L[j]*H.effectiveR[j]
+  end
+  return noprime(result)
+end
+
+struct effectiveHam
+  H::ITensor
+end
+
+function (H::effectiveHam)(x)
+  return noprime(H.H*x)
+end
+
+
+struct effectiveHam_LR
+  L::Vector{ITensor}
+  R::Vector{ITensor}
+end
+
+function effectiveHam_LR(Hmpo::InfiniteMPOMatrix, L::Vector{ITensor}, R::Vector{ITensor}, start::Int64, len::Int64)
+  tempH = Hmpo[start]
+  for j = 2:len
+    @disable_warn_order tempH = tempH * Hmpo[start+j-1]
+  end
+  tempL = copy(L)
+  @disable_warn_order  apply_mpomatrix_left!(tempL, tempH)
+  return effectiveHam_LR(tempL, R)
+end
+
+
+function (H::effectiveHam_LR)(x)
+  res = (H.L[1] * x) * H.R[1]
+  for j = 2:length(H.L)
+    res += (H.L[j] * x) * H.R[j]
+  end
+  return noprime(res)
+end
 
 
 
@@ -105,69 +164,6 @@ function apply_mpomatrix_left!(L::Vector{ITensor}, Hmpo::Matrix{ITensor}, ψ::IT
   end
 end
 
-
-# function build_left_mixer(L::Vector{ITensor}, Hmpo::Matrix{ITensor}, ψ::ITensor; maxdim = 20, cutoff = 1e-8, α = 1.)
-#   res = ψ
-#   #maxdim = min(maxdim, 4*dim(only(uniqueinds(ψ, Hmpo[1, 1], L[1]))))
-#   #println(maxdim)
-#   for j in reverse(2:length(L))
-#     temp = noprime(L[j] * Hmpo[j, j-1] * ψ)
-#     if order(temp) > 3
-#       l = combiner(only(uniqueinds(ψ, L[j], Hmpo[j, j-1])), only(uniqueinds(temp, ψ, L[j])), dir = ITensors.Out)
-#       temp*=l
-#     end
-#       res, (new_ind, )= ITensors.directsum(res, α*temp,
-#        uniqueinds(res, temp) ,
-#         uniqueinds(temp, res ); tags = [string(tags(only(uniqueinds(ψ, L[j], Hmpo[j, j-1]))))[2:end-1]])
-#         l = combiner(only(uniqueinds(res, ψ)), tags = tags(only(uniqueinds(ψ, L[j], Hmpo[j, j-1]))))
-#         res*=l
-#       if maxdim < dim(new_ind)
-#         res, v, _ = svd(res, commoninds(ψ, res), righttags = tags(only(uniqueinds(ψ, res)) ), maxdim = maxdim, cutoff = cutoff)
-#         res *= v
-#       end
-#   end
-#   return res
-# end
-#
-#
-# function build_left_mixer(L::Vector{ITensor}, Hmpo::Matrix{ITensor}, ψ::ITensor; maxdim = 20, cutoff = 1e-8, α = 1.)
-#   res = ψ
-#   maxdim = min(maxdim, 2*dim(only(commoninds(ψ, L[1]))))
-#   #println(maxdim)
-#   rind = only(uniqueinds(ψ, L[1], Hmpo[1, 1]))
-#   bd = δ(dag(rind), prime(rind))
-#   for j in reverse(2:length(L))
-#     temp = noprime(L[j] * Hmpo[j, j-1] * ψ)
-#     if order(temp) > 3
-#       l = combiner(only(uniqueinds(ψ, L[j], Hmpo[j, j-1])), only(uniqueinds(temp, ψ, L[j])), dir = ITensors.In)
-#       temp*=l
-#     end
-#       res, (new_ind, )= ITensors.directsum(res, α*temp,
-#        uniqueinds(res, temp) ,
-#         uniqueinds(temp, res ); tags = [string(tags(only(uniqueinds(ψ, L[j], Hmpo[j, j-1]))))[2:end-1]])
-#         l = combiner(only(uniqueinds(res, ψ)), tags = tags(only(uniqueinds(ψ, L[j], Hmpo[j, j-1]))))
-#         res*=l
-#         bd *= wδ(dag(new_ind), rind)
-#         bd *= dag(l)
-#         rind = only(commoninds(res, bd))
-#         if maxdim < dim(new_ind) || j==2
-#           res, v, p = svd(res, commoninds(ψ, res), lefttags = tags(only(uniqueinds(ψ, res)) ), maxdim = maxdim, cutoff = cutoff)
-#           #println(inds(res))
-#           #res, p = polar(res, uniqueinds(res, bd), maxdim = maxdim, tags = tags(only(uniqueinds(ψ, L[j], Hmpo[j, j-1]))))
-#           #println(inds(res))
-#           #res *= v
-#           bd *= v*p
-#           #println("Blah")
-#           #println(res*dag(res))
-#           #println(inds(bd))
-#           rind = only(commoninds(res, bd))
-#         end
-#   end
-#   return res, noprime(bd)#, dag(l) * wδ(dag(new_ind), only(unique()))
-# end
-
-
-
 function apply_mpomatrix_right!(R::Vector{ITensor}, Hmpo::Matrix{ITensor})
   init = [false for j = 1:length(R)]
   for j = reverse(1:length(R))
@@ -212,38 +208,6 @@ function apply_mpomatrix_right!(R::Vector{ITensor}, Hmpo::Matrix{ITensor}, ψ::I
     end
   end
 end
-
-function (H::iDMRGStructure{InfiniteMPOMatrix})(x)
-  n = order(x) - 2
-  L = H.L
-  R = H.R
-  start = mod1(H.counter, nsites(H))
-  L = [L[j] * x for j in 1:length(L)]
-  for j in 0:n-1
-    apply_mpomatrix_left!(L, H.Hmpo[start+j])
-  end
-  result = L[1]*R[1]
-  for j = 2:length(L)
-    result+=L[j]*R[j]
-  end
-  return noprime(result)
-end
-
-
-function (H::temporaryHamiltonian)(x)
-  n = order(x) - 2
-  L = [H.effectiveL[j] * x for j in 1:length(H.effectiveL)]
-  for j in 0:n-1
-    apply_mpomatrix_left!(L, H.Hmpo[H.nref+j])
-  end
-  result = L[1]*H.effectiveR[1]
-  for j = 2:length(L)
-    result+=L[j]*H.effectiveR[j]
-  end
-  return noprime(result)
-end
-
-
 
 function advance_environments(H::iDMRGStructure{InfiniteMPOMatrix})
   N = nsites(H)
@@ -351,11 +315,8 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, m
       starting_state *= iDM.ψ.AR[start+j-1]
     end
     if build_local_H
-      temp_H = build_local_hamiltonian(iDM.Hmpo, iDM.L, effective_Rs[count], start, nb_site)
-      lc = combiner(inds(starting_state));
-      temp_H = effectiveHam(prime(lc) *temp_H.H * dag(lc) )
-      local_ener, new_x = eigsolve(temp_H, lc*starting_state, 1, :SR; ishermitian=true, tol=solver_tol)
-      new_x[1] *= dag(lc)
+      temp_H = effectiveHam_LR(iDM.Hmpo, iDM.L, effective_Rs[count], start, nb_site)
+      local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol)
     else
       temp_H = temporaryHamiltonian(iDM.L, effective_Rs[count], iDM.Hmpo, start)
       local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol)
@@ -462,14 +423,6 @@ function test_validity_imps(ψ::InfiniteCanonicalMPS; prec = 1e-8)
   for j = 1:nsites(ψ)
     @assert norm(ψ.AL[j]*ψ.C[j] - ψ.C[j-1]*ψ.AR[j])<prec
   end
-end
-
-struct effectiveHam
-  H::ITensor
-end
-
-function (H::effectiveHam)(x)
-  return noprime(H.H*x)
 end
 
 
