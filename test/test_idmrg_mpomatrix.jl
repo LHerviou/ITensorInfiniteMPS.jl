@@ -77,11 +77,32 @@ using Random
     @test energy_finite ≈ inf_ener rtol = 1e-4
     @test Szs_finite[nfinite:(nfinite + nsite - 1)] ≈ Szs_infinite rtol = 1e-2
   end
+
+  for dim_dmrg in 2:3
+    nsite = 4
+    conserve_qns = true
+
+    space_ = fill(space_shifted(model, 0; conserve_qns=conserve_qns), nsite)
+
+    s = infsiteinds("S=1/2", nsite; space=space_)
+    ψ = InfMPS(s, initstate)
+
+    Hmpo = InfiniteMPOMatrix(model, s; model_kwargs...)
+
+    dmrgStruc = iDMRGStructure(ψ, Hmpo, dim_dmrg)
+    advance_environments(dmrgStruc)
+    advance_environments(dmrgStruc)
+    inf_ener, _ = idmrg(dmrgStruc, nb_iterations = 100, maxdim = 40)
+    Szs_infinite = [expect(dmrgStruc.ψ, "Sz", n) for n in 1:nsite]
+
+    @test energy_finite ≈ inf_ener rtol = 1e-4
+    @test Szs_finite[nfinite:(nfinite + nsite - 1)] ≈ Szs_infinite rtol = 1e-2
+  end
 end
 
 
 
-@testset "idmrg_mpomatrix" begin
+@testset "idmrg_mpomatrix_Heisenberg" begin
   Random.seed!(1234)
 
   model = Model"heisenberg"()

@@ -12,8 +12,18 @@ dmrg_sites(IDM::iDMRGStructure) = IDM.dmrg_sites
 Base.copy(iDM::iDMRGStructure) = iDMRGStructure{typeof(iDM.Hmpo)}(copy(iDM.ψ), iDM.Hmpo, copy(iDM.L), copy(iDM.R), iDM.counter, iDM.dmrg_sites)
 
 
+struct temporaryHamiltonian
+  effectiveL::Vector{ITensor}
+  effectiveR::Vector{ITensor}
+  Hmpo::InfiniteMPOMatrix
+  nref::Int64 #leftmostsite
+end
+
+
+
+
 function iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix, dmrg_sites::Int64)
-  N = dmrg_sites
+  N = nsites(ψ) #dmrg_sites
   l = only(commoninds(ψ.AL[0], ψ.AL[1]))
   r = only(commoninds(ψ.AR[N+1], ψ.AR[N]))
   L = [ITensor(l, prime(dag(l))) for j in 1:size(Hmpo[1])[1]]
@@ -219,9 +229,25 @@ function (H::iDMRGStructure{InfiniteMPOMatrix})(x)
   return noprime(result)
 end
 
+
+function (H::temporaryHamiltonian)(x)
+  n = order(x) - 2
+  L = [H.effectiveL[j] * x for j in 1:length(H.effectiveL)]
+  for j in 0:n-1
+    apply_mpomatrix_left!(L, H.Hmpo[H.nref+j])
+  end
+  result = L[1]*H.effectiveR[1]
+  for j = 2:length(L)
+    result+=L[j]*H.effectiveR[j]
+  end
+  return noprime(result)
+end
+
+
+
 function advance_environments(H::iDMRGStructure{InfiniteMPOMatrix})
   N = nsites(H)
-  nb_site = dmrg_sites(H)
+  nb_site = N#dmrg_sites(H)
   start = mod1(H.counter, N)
   for j in 0:N-1
     apply_mpomatrix_left!(H.L, H.Hmpo[start+j], H.ψ.AL[start + j])
@@ -294,68 +320,107 @@ end
 function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, maxdim = 20, cutoff = 1e-10)
   N = nsites(iDM)
   nb_site = dmrg_sites(iDM)
-  if nb_site != N
+  if nb_site > N
     error("iDMRG with a step size different than the unit cell has not been implemented")
   end
-  start = mod1(iDM.counter, N)
-  starting_state = iDM.ψ.AL[start] * iDM.ψ.C[start] * iDM.ψ.AR[start+1]
-  for j = 3:nb_site
-    starting_state *= iDM.ψ.AR[start+j-1]
+  if nb_site == 1
+    error("Single site dmrg has not been implemented")
   end
-  local_ener, new_x = eigsolve(iDM, starting_state, 1, :SR; ishermitian=true, tol=solver_tol)
-  U2, S2, V2 = svd(new_x[1], commoninds(new_x[1], iDM.ψ.AL[start]); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start+1]))),
-  righttags = tags(only(commoninds(iDM.ψ.AR[start+1], iDM.ψ.AR[start]))))
-  err = 1 - norm(S2)
-  S2 = S2 / norm(S2)
-  iDM.ψ.AL[start] = U2
-  #iDM.ψ.AR[start] = diag_ortho_polar(U2 * S2, iDM.ψ.C[start-1])
-  temp_R, temp_C = diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start-1])
-  #iDM.ψ.AL[start - 1] *= wδ(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start-1])), only(uniqueinds(temp_C, temp_R)))
-  iDM.ψ.AR[start - 1] *= wδ(only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start-1])), only(commoninds(temp_C, temp_R)))
-  iDM.ψ.AR[start] = temp_R
-  iDM.ψ.C[start-1] = temp_C
-  iDM.ψ.C[start] = S2
-  #error()
-  for j in 2:nb_site - 1
-    new_x = S2 * V2
-    linktags = tags(only(commoninds(iDM.ψ.AL[start+j-1], iDM.ψ.AL[start+j])))
-    U2, S2, V2 = svd(new_x, (only(commoninds(new_x, iDM.ψ.AL[start+j-1])), only(commoninds(new_x, iDM.ψ.AL[start+j-2])));
-      maxdim=maxdim, cutoff=cutoff, lefttags = linktags, righttags = linktags)
-    err += 1 - norm(S2)
+  if (N÷(nb_site÷2))*(nb_site÷2) != N
+    error("We require that the (nb_site÷2) divides the unitcell length")
+  end
+  nbIterations =  (N - nb_site)÷(nb_site÷2) + 1#(N÷(nb_site÷2)) - 1
+  original_start = mod1(iDM.counter, N)
+  effective_Rs=[iDM.R for j in 1:nbIterations]
+  local_ener=0
+  err = 0
+  site_looked = original_start + N-1
+  for j in reverse(1:nbIterations-1)
+      effective_Rs[j] = copy(effective_Rs[j+1])
+      for k in 0:nb_site÷2-1
+        apply_mpomatrix_right!(effective_Rs[j], iDM.Hmpo[site_looked], iDM.ψ.AR[site_looked])
+        site_looked -= 1
+      end
+  end
+  adjust_left = 0
+  adjust_right_most = 0
+  start = original_start
+  for count in 1:nbIterations
+    starting_state = iDM.ψ.AL[start] * iDM.ψ.C[start] * iDM.ψ.AR[start+1]
+    for j = 3:nb_site
+      starting_state *= iDM.ψ.AR[start+j-1]
+    end
+    temp_H = temporaryHamiltonian(iDM.L, effective_Rs[count], iDM.Hmpo, start)
+    local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol)
+    U2, S2, V2 = svd(new_x[1], commoninds(new_x[1], iDM.ψ.AL[start]); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start+1]))),
+    righttags = tags(only(commoninds(iDM.ψ.AR[start+1], iDM.ψ.AR[start]))))
+    err = 1 - norm(S2)
     S2 = S2 / norm(S2)
-    iDM.ψ.AL[start+j-1] = U2
-    temp_R, temp_C = diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start+j-2])
-    iDM.ψ.AR[start+j-2] *= wδ(dag(only(uniqueinds(iDM.ψ.AR[start+j-2], iDM.ψ.AL[start+j-2], iDM.ψ.AR[start+j-3]))), only(commoninds(temp_C, temp_R)))
-    iDM.ψ.AR[start+j-1] = temp_R
-    iDM.ψ.C[start+j-2] = temp_C
-    iDM.ψ.C[start+j-1] = S2
-  end
-  adjust_right = wδ(dag(only(uniqueinds(V2, S2, iDM.ψ.AR[start+nb_site-1]))), dag(only(uniqueinds(iDM.ψ.AR[start+nb_site], iDM.ψ.AL[start+nb_site], iDM.ψ.C[start+nb_site]))))
-  iDM.ψ.AR[start+nb_site-1] = V2 *  adjust_right
-  temp = δ(only(uniqueinds(iDM.ψ.AR[start+nb_site], iDM.ψ.AL[start+nb_site], iDM.ψ.C[start+nb_site])), only(commoninds( iDM.ψ.C[start+nb_site], iDM.ψ.AL[start+nb_site])) )
-  temp_R, temp_C = diag_ortho_polar_both(S2 * iDM.ψ.AR[start+nb_site-1], temp)
-  iDM.ψ.AL[start+nb_site-1] = temp_R
-  iDM.ψ.C[start+nb_site-1] = temp_C
-  adjust_left = wδ(only(commoninds(temp_C, temp_R)), dag(only(uniqueinds(iDM.ψ.AL[start+nb_site], iDM.ψ.AL[start+nb_site+1], iDM.ψ.AR[start+nb_site]))) )
-  iDM.ψ.AL[start+nb_site] *= adjust_left
-  #iDM.ψ.AL[start+nb_site-1] = diag_ortho_polar_both(S2 * V2, iDM.ψ.C[start+nb_site-1])
-  for j in 1:nb_site÷2
-    if j == 1
-      apply_mpomatrix_left!(iDM.L, iDM.Hmpo[start+j-1],translatecell(translater(iDM), dag(adjust_left), -1)*iDM.ψ.AL[start+j-1])
-    else
-      apply_mpomatrix_left!(iDM.L, iDM.Hmpo[start+j-1], iDM.ψ.AL[start+j-1])
+    iDM.ψ.AL[start] = U2
+    temp_R, temp_C = diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start-1])
+    if count == 1 #&& nbIterations > 1
+      adjust_right_most = translatecell(translater(iDM), wδ(only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start-1])), only(commoninds(temp_C, temp_R))), 1)
+      for j in 1:length(iDM.R)
+        effective_Rs[end][j] *= dag(adjust_right_most) #Also modify iDM.R
+        effective_Rs[end][j] *= prime(adjust_right_most)
+      end
     end
-    iDM.L[1] -= local_ener[1]/N * denseblocks(δ(inds(iDM.L[1])...))
-  end
-  for j in reverse(nb_site÷2+1:nb_site)
-    if j == nb_site
-      apply_mpomatrix_right!(iDM.R, iDM.Hmpo[start+j-1], dag(adjust_right)*iDM.ψ.AR[start+j-1])
-    else
-      apply_mpomatrix_right!(iDM.R, iDM.Hmpo[start+j-1], iDM.ψ.AR[start+j-1])
+    iDM.ψ.AR[start - 1] *= wδ(only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start-1])), only(commoninds(temp_C, temp_R)))
+    iDM.ψ.AR[start] = temp_R
+    iDM.ψ.C[start-1] = temp_C
+    iDM.ψ.C[start] = S2
+    for j in 2:nb_site - 1
+      new_x = S2 * V2
+      linktags = tags(only(commoninds(iDM.ψ.AL[start+j-1], iDM.ψ.AL[start+j])))
+      U2, S2, V2 = svd(new_x, (only(commoninds(new_x, iDM.ψ.AL[start+j-1])), only(commoninds(new_x, iDM.ψ.AL[start+j-2])));
+        maxdim=maxdim, cutoff=cutoff, lefttags = linktags, righttags = linktags)
+      err += 1 - norm(S2)
+      S2 = S2 / norm(S2)
+      iDM.ψ.AL[start+j-1] = U2
+      temp_R, temp_C = diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start+j-2])
+      iDM.ψ.AR[start+j-2] *= wδ(dag(only(uniqueinds(iDM.ψ.AR[start+j-2], iDM.ψ.AL[start+j-2], iDM.ψ.AR[start+j-3]))), only(commoninds(temp_C, temp_R)))
+      iDM.ψ.AR[start+j-1] = temp_R
+      iDM.ψ.C[start+j-2] = temp_C
+      iDM.ψ.C[start+j-1] = S2
     end
-    iDM.R[end] -= local_ener[1]/N * denseblocks(δ(inds(iDM.R[end])...))
+    if count != nbIterations
+      iDM.ψ.AR[start+nb_site-1] = V2
+      temp_R, temp_C = diag_ortho_polar_both(S2 * iDM.ψ.AR[start+nb_site-1], iDM.ψ.C[start+nb_site-1])
+      iDM.ψ.AL[start+nb_site-1] = temp_R
+      iDM.ψ.C[start+nb_site-1] = temp_C
+      adjust_left = wδ(only(commoninds(temp_C, temp_R)), dag(only(uniqueinds(iDM.ψ.AL[start+nb_site], iDM.ψ.AL[start+nb_site+1], iDM.ψ.AR[start+nb_site]))) )
+      iDM.ψ.AL[start+nb_site] *= adjust_left
+    else
+      if nb_site == N
+        adjust_right = wδ(dag(only(uniqueinds(V2, S2, iDM.ψ.AR[start+nb_site-1]))), dag(only(uniqueinds(iDM.ψ.AR[start+nb_site], iDM.ψ.AL[start+nb_site], iDM.ψ.C[start+nb_site]))))
+        iDM.ψ.AR[start+nb_site-1] = V2 #*  adjust_right
+        iDM.ψ.AR[start+nb_site-1] *=  adjust_right
+      else
+        iDM.ψ.AR[start+nb_site-1] = V2 #*  adjust_right
+      end
+      temp = wδ(only(uniqueinds(iDM.ψ.AR[start+nb_site], iDM.ψ.AL[start+nb_site], iDM.ψ.C[start+nb_site])), only(commoninds( iDM.ψ.C[start+nb_site], iDM.ψ.AL[start+nb_site])) )
+      temp_R, temp_C = diag_ortho_polar_both(S2 * iDM.ψ.AR[start+nb_site-1], temp)
+      iDM.ψ.AL[start+nb_site-1] = temp_R
+      iDM.ψ.C[start+nb_site-1] = temp_C
+      adjust_left = wδ(only(commoninds(temp_C, temp_R)), dag(only(uniqueinds(iDM.ψ.AL[start+nb_site], iDM.ψ.AL[start+nb_site+1], iDM.ψ.AR[start+nb_site]))) )
+      iDM.ψ.AL[start+nb_site] *= adjust_left
+    end
+    for j in 1:nb_site÷2
+      if j == 1 && nbIterations == 1
+        apply_mpomatrix_left!(iDM.L, iDM.Hmpo[start+j-1], translatecell(translater(iDM), dag(adjust_left), -1)*iDM.ψ.AL[start+j-1])
+      else
+        apply_mpomatrix_left!(iDM.L, iDM.Hmpo[start+j-1], iDM.ψ.AL[start+j-1])
+      end
+      #iDM.L[1] -= local_ener[1]/N * denseblocks(δ(inds(iDM.L[1])...))
+    end
+    iDM.counter+=nb_site÷2
+    start += nb_site÷2
   end
-  if start == 1
+  for j in reverse((N-nb_site + nb_site÷2 + 1):N)
+    apply_mpomatrix_right!(iDM.R, iDM.Hmpo[original_start+j-1], iDM.ψ.AR[original_start+j-1])
+    iDM.R[end] -= local_ener[1]/length((N-nb_site + nb_site÷2 + 1):N) * denseblocks(δ(inds(iDM.R[end])...))
+  end
+  if start <= N
     for j in 1:length(iDM.R)
       iDM.R[j]= translatecell(translater(iDM), iDM.R[j], 1)
     end
@@ -364,7 +429,6 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, m
       iDM.L[j]= translatecell(translater(iDM), iDM.L[j], -1)
     end
   end
-  iDM.counter+=nb_site÷2
   return local_ener[1]/N, err
 end
 
