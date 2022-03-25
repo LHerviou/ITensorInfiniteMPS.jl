@@ -317,7 +317,7 @@ function idmrg_step_noupdate_sideC(iDM::iDMRGStructure{InfiniteMPOMatrix}; solve
 end
 
 
-function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, maxdim = 20, cutoff = 1e-10)
+function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, maxdim = 20, cutoff = 1e-10, build_local_H = false)
   N = nsites(iDM)
   nb_site = dmrg_sites(iDM)
   if nb_site > N
@@ -350,8 +350,16 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, m
     for j = 3:nb_site
       starting_state *= iDM.ψ.AR[start+j-1]
     end
-    temp_H = temporaryHamiltonian(iDM.L, effective_Rs[count], iDM.Hmpo, start)
-    local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol)
+    if build_local_H
+      temp_H = build_local_hamiltonian(iDM.Hmpo, iDM.L, effective_Rs[count], start, nb_site)
+      lc = combiner(inds(starting_state));
+      temp_H = effectiveHam(prime(lc) *temp_H.H * dag(lc) )
+      local_ener, new_x = eigsolve(temp_H, lc*starting_state, 1, :SR; ishermitian=true, tol=solver_tol)
+      new_x[1] *= dag(lc)
+    else
+      temp_H = temporaryHamiltonian(iDM.L, effective_Rs[count], iDM.Hmpo, start)
+      local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol)
+    end
     U2, S2, V2 = svd(new_x[1], commoninds(new_x[1], iDM.ψ.AL[start]); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start+1]))),
     righttags = tags(only(commoninds(iDM.ψ.AR[start+1], iDM.ψ.AR[start]))))
     err = 1 - norm(S2)
@@ -463,6 +471,40 @@ end
 function (H::effectiveHam)(x)
   return noprime(H.H*x)
 end
+
+
+
+function build_local_hamiltonian(H::InfiniteMPOMatrix, L::Vector{ITensor}, R::Vector{ITensor}, start::Int64, len::Int64)
+  tempL = copy(L)
+  for j in 0:len-1
+    @disable_warn_order apply_mpomatrix_left!(tempL, H[start+j])
+  end
+  @disable_warn_order temp = tempL[1] *  R[1]
+  for j in 2:length(tempL)
+    @disable_warn_order temp += tempL[j] * R[j]
+  end
+  return effectiveHam(temp)
+end
+
+
+
+function build_local_hamiltonian_2(H::InfiniteMPOMatrix, L::Vector{ITensor}, R::Vector{ITensor}, start::Int64, len::Int64)
+  temp_H = H[start]
+  for j = 2:len
+    temp_H = temp_H * H[start + j - 1]
+  end
+  tempL = copy(L)
+  @disable_warn_order apply_mpomatrix_left!(tempL, temp_H)
+  @disable_warn_order temp = tempL[1] *  R[1]
+  for j in 2:length(tempL)
+    @disable_warn_order temp += tempL[j] * R[j]
+  end
+  return effectiveHam(temp)
+end
+
+
+
+
 
 
 

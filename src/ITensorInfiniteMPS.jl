@@ -47,6 +47,9 @@ include("subspace_expansion.jl")
 include("vumps_localham.jl")
 include("vumps_mpo.jl")
 include("idmrg_mpomatrix.jl")
+include("models/fqhe13.jl")
+include("models/generalizedfqhe.jl")
+include("models/fqheauxiliaries/generate_hamiltonian.jl")
 
 export Cell,
   CelledVector,

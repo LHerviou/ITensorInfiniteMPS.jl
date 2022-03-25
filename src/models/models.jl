@@ -65,7 +65,7 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translater::Function; 
   ls = CelledVector([Index(1, "Link,c=1,n=$n") for n in 1:N], translater)
   mpos = [Matrix{ITensor}(undef, 1, 1) for i in 1:N]
   for j in 1:N
-    Hmat = fill(op("Zero", s[j]), range_H + 1, range_H + 1)
+    Hmat = fill(ITensor(Float64, prime(s[j]), dag(s[j])), range_H + 1, range_H + 1)
     identity = op("Id", s[j])
     Hmat[1, 1] = identity
     Hmat[end, end] = identity

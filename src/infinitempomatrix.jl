@@ -43,4 +43,28 @@ function InfiniteMPOMatrix(data::Vector{Matrix{ITensor}}, translater::Function)
   return InfiniteMPOMatrix(CelledVector(data, translater), 0, size(data)[1], false)
 end
 
-#nrange(H::InfiniteMPOMatrix) = [size(H[j])[1] - 1 for j in 1:nsites(H)]
+
+
+function Base.:*(A::Matrix{ITensor}, B::Matrix{ITensor})
+  if size(A)[2] != size(B)[1]
+    error("Matrices do not have the same dimensions")
+  end
+  res = Matrix{ITensor}(undef, size(A)[1], size(B)[2])
+  for i in 1:size(A)[1]
+    for j in 1:size(B)[1]
+      @disable_warn_order res[i, j] = A[i, end]*B[end, j]
+      for k in 1:size(A)[2]-1
+        if !isempty(A[i, k]) && !isempty(B[k, j])
+          if isempty(res[i, j])
+            @disable_warn_order res[i, j] = A[i, k] * B[k, j]
+          else
+            @disable_warn_order res[i, j] += A[i, k] * B[k, j]
+          end
+        end
+      end
+    end
+  end
+  return res
+end
+
+  #nrange(H::InfiniteMPOMatrix) = [size(H[j])[1] - 1 for j in 1:nsites(H)]
