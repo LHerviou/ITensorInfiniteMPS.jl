@@ -36,10 +36,21 @@ using Random
   setcutoff!(sweeps, 1E-10)
   energy_finite_total, ψfinite = dmrg(Hfinite, ψfinite, sweeps; outputlevel=0)
 
-  for multisite_update_alg in ["sequential", "parallel"],
+  @testset "VUMPS/TDVP with: multisite_update_alg = $multisite_update_alg, conserve_qns = $conserve_qns, nsites = $nsites, time_step = $time_step, localham_type = $localham_type" for multisite_update_alg in
+                                                                                                                                                                                       [
+      "sequential", "parallel"
+    ],
     conserve_qns in [true, false],
     nsites in [1, 2, 3, 4],
-    time_step in [-Inf, -0.5]
+    time_step in [-Inf, -0.5],
+    localham_type in [ITensor, MPO]
+
+    # ITensor VUMPS currently broken for unit cells > 2
+    if (localham_type == ITensor) && (nsites > 2)
+      continue
+    end
+
+    @show localham_type
 
     #if conserve_qns
     # Flux density is inconsistent for odd unit cells
@@ -51,7 +62,7 @@ using Random
     ψ = InfMPS(s, initstate)
 
     # Form the Hamiltonian
-    H = InfiniteSum{MPO}(model, s; model_kwargs...)
+    H = InfiniteSum{localham_type}(model, s; model_kwargs...)
 
     # Check translational invariance
     @test contract(ψ.AL[1:nsites]..., ψ.C[nsites]) ≈ contract(ψ.C[0], ψ.AR[1:nsites]...)
@@ -68,17 +79,19 @@ using Random
     # Alternate steps of running VUMPS and increasing the bond dimension
     for _ in 1:outer_iters
       ψ = subspace_expansion(ψ, H; subspace_expansion_kwargs...)
-      ψ = tdvp(H, ψ; vumps_kwargs...)
+      ψ = @time tdvp(H, ψ; vumps_kwargs...)
     end
 
     # Check translational invariance
     ## @test contract(ψ.AL[1:nsites]..., ψ.C[nsites]) ≈ contract(ψ.C[0], ψ.AR[1:nsites]...) rtol =
     ##   1e-6
 
-    function energy(ψ1, ψ2, h)
+    function energy(ψ1, ψ2, h::ITensor)
       ϕ = ψ1 * ψ2
       return (noprime(ϕ * h) * dag(ϕ))[]
     end
+
+    energy(ψ1, ψ2, h::MPO) = energy(ψ1, ψ2, prod(h))
 
     function expect(ψ, o)
       return (noprime(ψ * op(o, filterinds(ψ, "Site")...)) * dag(ψ))[]
@@ -94,8 +107,8 @@ using Random
     orthogonalize!(ψfinite, nfinite + 1)
     energy2_finite = energy(ψfinite[nfinite + 1], ψfinite[nfinite + 2], hnfinite2)
 
-    energy1_infinite = energy(ψ.AL[1], ψ.AL[2] * ψ.C[2], prod(H[(1, 2)]))
-    energy2_infinite = energy(ψ.AL[2], ψ.AL[3] * ψ.C[3], prod(H[(2, 3)]))
+    energy1_infinite = energy(ψ.AL[1], ψ.AL[2] * ψ.C[2], H[(1, 2)])
+    energy2_infinite = energy(ψ.AL[2], ψ.AL[3] * ψ.C[3], H[(2, 3)])
 
     orthogonalize!(ψfinite, nfinite)
     Sz1_finite = expect(ψfinite[nfinite], "Sz")
@@ -113,7 +126,7 @@ using Random
   end
 end
 
-@testset "vumps_ising_translater" begin
+@testset "vumps_ising_translator" begin
   Random.seed!(1234)
 
   model = Model"ising"()
@@ -127,7 +140,8 @@ end
     end
   end
 
-  temp_translatecell(i::Index, n::Integer) = translatecell(i, 2n)
+  #Not a correct and valid Hamiltonian #nned to think about a good test (or just import Laughlin 13)
+  temp_translatecell(i::Index, n::Integer) = ITensorInfiniteMPS.translatecelltags(i, n)
 
   # VUMPS arguments
   cutoff = 1e-8
@@ -155,7 +169,7 @@ end
   for nsite in 1:3
     space_ = fill(space_shifted(model, 1; conserve_qns=conserve_qns), nsite)
     s_bis = infsiteinds("S=1/2", nsite; space=space_)
-    s = infsiteinds("S=1/2", nsite; space=space_, translater=temp_translatecell)
+    s = infsiteinds("S=1/2", nsite; space=space_, translator=temp_translatecell)
     ψ = InfMPS(s, initstate)
 
     # Form the Hamiltonian
@@ -219,9 +233,9 @@ end
     @test Sz1_finite ≈ Sz2_finite rtol = 1e-5
     @test Sz1_infinite ≈ Sz2_infinite rtol = 1e-5
 
-    @test tags(s[nsite + 1]) == tags(s_bis[1 + 2nsite])
-    @test ITensorInfiniteMPS.translater(ψ) == temp_translatecell
-    @test ITensorInfiniteMPS.translater(s) == temp_translatecell
-    @test ITensorInfiniteMPS.translater(H) == temp_translatecell
+    #@test tags(s[nsite + 1]) == tags(s_bis[1 + nsite])
+    @test ITensorInfiniteMPS.translator(ψ) == temp_translatecell
+    @test ITensorInfiniteMPS.translator(s) == temp_translatecell
+    @test ITensorInfiniteMPS.translator(H) == temp_translatecell
   end
 end
