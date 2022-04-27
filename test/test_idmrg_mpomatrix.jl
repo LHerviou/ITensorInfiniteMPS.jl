@@ -159,7 +159,7 @@ end
     s = infsiteinds("S=1/2", nsite; space=space_)
     ψ = InfMPS(s, initstate)
 
-    Hmpo = InfiniteMPOMatrix(model, s; model_kwargs...)
+    Hmpo = InfiniteMPOMatrix(model, s)
 
     dmrgStruc = iDMRGStructure(ψ, Hmpo, dim_dmrg)
     advance_environments(dmrgStruc)
