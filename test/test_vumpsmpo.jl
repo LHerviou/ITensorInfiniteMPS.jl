@@ -3,11 +3,12 @@ using ITensorInfiniteMPS
 using Test
 using Random
 
-@testset "vumpsmpo_ising" begin
+#Ref time is 21.6s with negligible compilation time
+@time @testset "vumpsmpo_ising" begin
   Random.seed!(1234)
 
   model = Model"ising"()
-  model_kwargs = (J=1.0, h=1.1)
+  model_kwargs = (J=1.0, h=1.2)
 
   function space_shifted(::Model"ising", q̃sz; conserve_qns=true)
     if conserve_qns
@@ -21,7 +22,7 @@ using Random
   cutoff = 1e-8
   maxdim = 20
   tol = 1e-8
-  maxiter = 20
+  maxiter = 50
   outer_iters = 3
 
   initstate(n) = "↑"
@@ -47,7 +48,10 @@ using Random
   orthogonalize!(ψfinite, nfinite)
   energy_finite = energy(ψfinite, hnfinite, nfinite)
 
-  for multisite_update_alg in ["sequential", "parallel"],
+  @testset "VUMPS/TDVP with: multisite_update_alg = $multisite_update_alg, conserve_qns = $conserve_qns, nsites = $nsites" for multisite_update_alg in
+                                                                                                                               [
+      "sequential", "parallel"
+    ],
     conserve_qns in [true, false],
     nsites in [1, 2],
     time_step in [-Inf]
@@ -69,13 +73,16 @@ using Random
     # Alternate steps of running VUMPS and increasing the bond dimension
     ψ = tdvp(Hmpo, ψ; vumps_kwargs...)
     for _ in 1:outer_iters
-      ψ = subspace_expansion(ψ, Hmpo; subspace_expansion_kwargs...)
-      ψ = tdvp(Hmpo, ψ; vumps_kwargs...)
+      println("Subspace expansion")
+      ψ = @time subspace_expansion(ψ, Hmpo; subspace_expansion_kwargs...)
+      println("TDVP")
+      ψ = @time tdvp(Hmpo, ψ; vumps_kwargs...)
     end
 
     @test norm(
       contract(ψ.AL[1:nsites]..., ψ.C[nsites]) - contract(ψ.C[0], ψ.AR[1:nsites]...)
     ) ≈ 0 atol = 1e-5
+    #@test contract(ψ.AL[1:nsites]..., ψ.C[nsites]) ≈ contract(ψ.C[0], ψ.AR[1:nsites]...)
 
     H = InfiniteSum{MPO}(model, s; model_kwargs...)
     energy_infinite = expect(ψ, H)
@@ -171,7 +178,7 @@ end
   end
 end
 
-@testset "vumpsmpo_extendedising_translater" begin
+@testset "vumpsmpo_extendedising_translator" begin
   Random.seed!(1234)
 
   model = Model"ising_extended"()
@@ -217,7 +224,7 @@ end
   orthogonalize!(ψfinite, nfinite)
   energy_finite = energy(ψfinite, hnfinite, nfinite)
 
-  temp_translatecell(i::Index, n::Integer) = translatecell(i, 2n)
+  temp_translatecell(i::Index, n::Integer) = ITensorInfiniteMPS.translatecelltags(i, n)
 
   for multisite_update_alg in ["sequential"],
     conserve_qns in [true],
@@ -235,7 +242,7 @@ end
 
     space_ = fill(space_shifted(model, 1; conserve_qns=conserve_qns), nsite)
     s_bis = infsiteinds("S=1/2", nsite; space=space_)
-    s = infsiteinds("S=1/2", nsite; space=space_, translater=temp_translatecell)
+    s = infsiteinds("S=1/2", nsite; space=space_, translator=temp_translatecell)
     ψ = InfMPS(s, initstate)
 
     Hmpo = InfiniteMPOMatrix(model, s; model_kwargs...)
@@ -257,9 +264,9 @@ end
     @test energy_finite ≈ sum(energy_infinite) / nsite rtol = 1e-4
     @test Szs_finite[nfinite:(nfinite + nsite - 1)] ≈ Szs_infinite rtol = 1e-3
 
-    @test tags(s[nsite + 1]) == tags(s_bis[1 + 2nsite])
-    @test ITensorInfiniteMPS.translater(ψ) == temp_translatecell
-    @test ITensorInfiniteMPS.translater(s) == temp_translatecell
-    @test ITensorInfiniteMPS.translater(Hmpo) == temp_translatecell
+    #@test tags(s[nsite + 1]) == tags(s_bis[1 + 2nsite])
+    @test ITensorInfiniteMPS.translator(ψ) == temp_translatecell
+    @test ITensorInfiniteMPS.translator(s) == temp_translatecell
+    @test ITensorInfiniteMPS.translator(Hmpo) == temp_translatecell
   end
 end

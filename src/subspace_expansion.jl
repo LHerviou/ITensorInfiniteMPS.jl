@@ -3,8 +3,6 @@ function replaceind_indval(IV::Tuple, iĩ::Pair)
   return ntuple(n -> first(IV[n]) == i ? ĩ => last(IV[n]) : IV[n], length(IV))
 end
 
-#TODO implement the nullspace generation for InfiniteSum{ITensor}?
-
 function generate_twobody_nullspace(
   ψ::InfiniteCanonicalMPS, H::InfiniteSum{MPO}, b::Tuple{Int,Int}; atol=1e-2
 )
@@ -31,28 +29,29 @@ function generate_twobody_nullspace(
     ψH2 = noprime(ψ.AL[n1] * H[n1][1] * H[n1][2] * ψ.C[n1] * ψ.AR[n2])
   else   # Should be a better version now
     ψH2 =
-      H[n1][end] * ψ.AR[n2 + range_H - 2] * ψ′.AR[n2 + range_H - 2] * δʳ(n2 + range_H - 2)
+      H[n1][end] *
+      (ψ.AR[n2 + range_H - 2] * (ψ′.AR[n2 + range_H - 2] * δʳ(n2 + range_H - 2)))
     common_sites = findsites(ψ, H[(n1, n2)])
     idx = length(common_sites) - 1
     for j in reverse(1:(range_H - 3))
       if n2 + j == common_sites[idx]
-        ψH2 = ψH2 * ψ.AR[n2 + j] * ψ′.AR[n2 + j] * H[n1][idx]
+        ψH2 = ψH2 * ψ.AR[n2 + j] * H[n1][idx] * ψ′.AR[n2 + j]
         idx -= 1
       else
-        ψH2 = ψH2 * ψ.AR[n2 + j] * δˢ(n2 + j) * ψ′.AR[n2 + j]
+        ψH2 = ψH2 * ψ.AR[n2 + j] * (δˢ(n2 + j) * ψ′.AR[n2 + j])
       end
     end
     if common_sites[idx] == n2
       ψH2 = ψH2 * ψ.AR[n2] * H[n1][idx]
       idx -= 1
     else
-      ψH2 = ψH2 * ψ.AR[n2] * δˢ(n2)
+      ψH2 = ψH2 * (ψ.AR[n2] * δˢ(n2))
     end
     if common_sites[idx] == n1
-      ψH2 = ψH2 * ψ.AL[n1] * ψ.C[n1] * H[n1][idx]
+      ψH2 = ψH2 * (ψ.AL[n1] * ψ.C[n1]) * H[n1][idx]
       idx -= 1
     else
-      ψH2 = ψH2 * ψ.AL[n1] * ψ.C[n1] * δˢ(n1)
+      ψH2 = ψH2 * ((ψ.AL[n1] * δˢ(n1)) * ψ.C[n1])
     end
 
     ψH2 = noprime(ψH2)
@@ -62,10 +61,10 @@ function generate_twobody_nullspace(
       idx = length(common_sites)
       for j in (n2 + range_H - 2 - n):-1:(n2 + 1)
         if j == common_sites[idx]
-          temp_H2 = temp_H2 * ψ.AR[j] * ψ′.AR[j] * H[n1 - n][idx]
+          temp_H2 = temp_H2 * ψ.AR[j] * H[n1 - n][idx] * ψ′.AR[j]
           idx -= 1
         else
-          temp_H2 = temp_H2 * ψ.AR[j] * ψ′.AR[j] * δˢ(j)
+          temp_H2 = temp_H2 * ψ.AR[j] * (δˢ(j) * ψ′.AR[j])
         end
       end
       if common_sites[idx] == n2
@@ -75,21 +74,43 @@ function generate_twobody_nullspace(
         temp_H2 = temp_H2 * ψ.AR[n2] * δˢ(n2)
       end
       if common_sites[idx] == n1
-        temp_H2 = temp_H2 * ψ.AL[n1] * ψ.C[n1] * H[n1 - n][idx]
+        temp_H2 = temp_H2 * (ψ.AL[n1] * ψ.C[n1]) * H[n1 - n][idx]
         idx -= 1
       else
-        temp_H2 = temp_H2 * ψ.AL[n1] * ψ.C[n1] * δˢ(n1)
+        temp_H2 = temp_H2 * ((ψ.AL[n1] * δˢ(n1)) * ψ.C[n1])
       end
       for j in 1:n
         if n1 - j == common_sites[idx]
-          temp_H2 = temp_H2 * ψ.AL[n1 - j] * ψ′.AL[n1 - j] * H[n1 - n][idx]
+          temp_H2 = temp_H2 * ψ.AL[n1 - j] * H[n1 - n][idx] * ψ′.AL[n1 - j]
           idx -= 1
         else
-          temp_H2 = temp_H2 * ψ.AL[n1 - j] * δˢ(n1 - j) * ψ′.AL[n1 - j]
+          temp_H2 = temp_H2 * (ψ.AL[n1 - j] * δˢ(n1 - j)) * ψ′.AL[n1 - j]
         end
       end
       ψH2 = ψH2 + noprime(temp_H2 * δˡ(n1 - n - 1))
     end
+  end
+  return ψH2
+end
+
+function generate_twobody_nullspace(
+  ψ::InfiniteCanonicalMPS, H::InfiniteSum{ITensor}, b::Tuple{Int,Int}; atol=1e-2
+)
+  n1, n2 = b
+  lⁿ¹ = commoninds(ψ.AL[n1], ψ.C[n1])
+  rⁿ¹ = commoninds(ψ.AR[n2], ψ.C[n1])
+  l = linkinds(only, ψ.AL)
+  r = linkinds(only, ψ.AR)
+  s = siteinds(only, ψ)
+  δʳ(n) = δ(dag(r[n]), prime(r[n]))
+  δˢ(n) = δ(dag(s[n]), prime(s[n]))
+  δˡ(n) = δ(l[n], dag(prime(l[n])))
+
+  range_H = nrange(H, 1)
+  @assert range_H == 2 "Subspace expansion for InfiniteSum{ITensor} currently only works for 2-local Hamiltonians"
+
+  if range_H == 2
+    ψH2 = noprime(ψ.AL[n1] * H[n1] * ψ.C[n1] * ψ.AR[n2])
   end
   return ψH2
 end
@@ -109,10 +130,11 @@ function generate_twobody_nullspace(
       non_empty_idx -= 1
     end
     @assert non_empty_idx != i - 1 "Empty MPO"
-    temp_L[i] = L[n_1 - 1][non_empty_idx] * ψ.AL[n_1] * H[n_1][non_empty_idx, i] * ψ.C[n_1]
+    temp_L[i] =
+      L[n_1 - 1][non_empty_idx] * (ψ.AL[n_1] * ψ.C[n_1]) * H[n_1][non_empty_idx, i]
     for j in reverse(i:(non_empty_idx - 1))
       if !isempty(H[n_1][j, i])
-        temp_L[i] += L[n_1 - 1][j] * H[n_1][j, i] * ψ.AL[n_1] * ψ.C[n_1]
+        temp_L[i] += L[n_1 - 1][j] * (ψ.AL[n_1] * ψ.C[n_1]) * H[n_1][j, i]
       end
     end
   end
@@ -123,10 +145,10 @@ function generate_twobody_nullspace(
       non_empty_idx += 1
     end
     @assert non_empty_idx != i + 1 "Empty MPO"
-    temp_R[i] = H[n_1 + 1][i, non_empty_idx] * ψ.AR[n_1 + 1] * R[n_1 + 2][non_empty_idx]
+    temp_R[i] = H[n_1 + 1][i, non_empty_idx] * (ψ.AR[n_1 + 1] * R[n_1 + 2][non_empty_idx])
     for j in (non_empty_idx + 1):i
       if !isempty(H[n_1 + 1][i, j])
-        temp_R[i] += H[n_1 + 1][i, j] * ψ.AR[n_1 + 1] * R[n_1 + 2][j]
+        temp_R[i] += H[n_1 + 1][i, j] * (ψ.AR[n_1 + 1] * R[n_1 + 2][j])
       end
     end
   end
@@ -159,6 +181,8 @@ function subspace_expansion(
     println(
       "Current bond dimension at bond $b is $dˡ while desired maximum dimension is $maxdim, skipping bond dimension increase",
     )
+    flush(stdout)
+    flush(stderr)
     return (ψ.AL[n1], ψ.AL[n2]), ψ.C[n1], (ψ.AR[n1], ψ.AR[n2])
   end
   maxdim -= dˡ
@@ -175,6 +199,8 @@ function subspace_expansion(
     println(
       "Impossible to do a subspace expansion, probably due to conservation constraints"
     )
+    flush(stdout)
+    flush(stderr)
     return (ψ.AL[n1], ψ.AL[n2]), ψ.C[n1], (ψ.AR[n1], ψ.AR[n2])
   end
 
@@ -182,7 +208,7 @@ function subspace_expansion(
   if dim(S) == 0 #Crash before reaching this point
     return (ψ.AL[n1], ψ.AL[n2]), ψ.C[n1], (ψ.AR[n1], ψ.AR[n2])
   end
-  @show S[end, end]
+  #@show S[end, end]
   NL *= dag(U)
   NR *= dag(V)
 
@@ -306,13 +332,3 @@ function subspace_expansion(ψ, H; kwargs...)
   end
   return ψ
 end
-#
-#
-# tt = ψ1.AL[1] * ψ1.C[1]; e = (tt * dag(tt))[]
-# @show norm( ψ1.AL[1] * ψ1.C[1] -  ψ1.C[0] * ψ1.AR[1] )
-# l = linkinds(only, ψ1.AL)
-# r = linkinds(only, ψ1.AR)
-# tt = δ(l[0], prime(dag(l[0]))) * ψ1.AL[1] * dag(prime(ψ1)).AL[1] * dag(δ(s[1], dag(prime(s[1]))));
-# tt == denseblocks(δ(l[1], prime(dag(l[1]))))
-# tt = δ(dag(r[1]), prime(r[1])) * ψ1.AR[1] * dag(prime(ψ1)).AR[1] * dag(δ(s[1], dag(prime(s[1]))));
-# tt == denseblocks(δ(dag(r[0]), prime(r[0])))
