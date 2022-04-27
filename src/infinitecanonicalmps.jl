@@ -142,7 +142,7 @@ function ITensors.expect(ψ::InfiniteCanonicalMPS, h::MPO)
   δˡ(n) = ITensorInfiniteMPS.δ(l[n], prime(dag(l[n])))
   δʳ(n) = ITensorInfiniteMPS.δ(dag(r[n]), prime(r[n]))
   ψ′ = prime(dag(ψ))
-  
+
   ns = ITensorInfiniteMPS.findsites(ψ, h)
   nrange = ns[end] - ns[1] + 1
   idx = 2
@@ -155,7 +155,7 @@ function ITensors.expect(ψ::InfiniteCanonicalMPS, h::MPO)
       temp_O = temp_O * (ψ.AL[n] * δˢ(n)) * ψ′.AL[n]
     end
   end
-  temp_O = temp_O * (ψ.C[ns[end]] * δʳ(ns[end]) * ψ′.C[ns[end]])
+  temp_O = temp_O * (ψ.C[ns[end]] * denseblocks(δʳ(ns[end])) * ψ′.C[ns[end]])
   return temp_O[]
 end
 
