@@ -258,7 +258,7 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, m
   N = nsites(iDM)
   nb_site = dmrg_sites(iDM)
   if nb_site > N
-    error("iDMRG with a step size different than the unit cell has not been implemented")
+    error("iDMRG with a step size larger than the unit cell has not been implemented")
   end
   if nb_site == 1
     error("Single site dmrg has not been implemented")
@@ -371,11 +371,21 @@ end
 
 
 
-function idmrg(iDM::iDMRGStructure{InfiniteMPOMatrix}; nb_iterations = 10, output_level = 0, mixer = false, α = 0.001, kwargs...)
+function idmrg(iDM::iDMRGStructure{InfiniteMPOMatrix}; nb_iterations = 10, output_level = 0, mixer = false, ener_tol=0, α = 0.001, kwargs...)
+  eners = Float64[]
+  errs = Float64[]
   ener = 0; err = 0
   for j in 1:nb_iterations
   #  if !mixer
       ener, err = idmrg_step(iDM; kwargs...)
+      append!(eners, ener)
+      append!(errs, err)
+      if j > 5
+        if maximum([abs(eners[end-j+1] - eners[end-j]) for j in 1:5])< ener_tol
+          println("Early finish")
+          return eners, errs
+        end
+      end
   #  else
   #    ener, err = idmrg_step_with_mixer(iDM; α = α, kwargs...)
   #  end
@@ -383,7 +393,7 @@ function idmrg(iDM::iDMRGStructure{InfiniteMPOMatrix}; nb_iterations = 10, outpu
       println("Energy after iteration $j is $ener")
     end
   end
-  return ener, err
+  return eners, errs
 end
 
 
