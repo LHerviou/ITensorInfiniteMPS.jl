@@ -167,19 +167,59 @@ function ITensors.expect(ψ::InfiniteCanonicalMPS, h::MPO)
   ns = ITensorInfiniteMPS.findsites(ψ, h)
   nrange = ns[end] - ns[1] + 1
   idx = 2
-  temp_O = δˡ(ns[1] - 1) * ψ.AL[ns[1]] * ψ′.AL[ns[1]] * h[1]
+  temp_O = δˡ(ns[1] - 1) * ψ.AL[ns[1]] * h[1] * ψ′.AL[ns[1]]
   for n in (ns[1] + 1):(ns[1] + nrange - 1)
     if n == ns[idx]
-      temp_O = temp_O * ψ.AL[n] * ψ′.AL[n] * h[idx]
+      temp_O = temp_O * ψ.AL[n] * h[idx] * ψ′.AL[n]
       idx += 1
     else
-      temp_O = temp_O * ψ.AL[n] * δˢ(n) * ψ′.AL[n]
+      temp_O = temp_O * (ψ.AL[n] * δˢ(n)) * ψ′.AL[n]
     end
   end
-  temp_O = temp_O * ψ.C[ns[end]] * δʳ(ns[end]) * ψ′.C[ns[end]]
+  temp_O = temp_O * (ψ.C[ns[end]] * denseblocks(δʳ(ns[end])) * ψ′.C[ns[end]])
   return temp_O[]
 end
 
 function ITensors.expect(ψ::InfiniteCanonicalMPS, h::InfiniteSum)
   return [expect(ψ, h[j]) for j in 1:nsites(ψ)]
+end
+
+
+function ent_spec(psi::InfiniteCanonicalMPS)
+  n = nsites(psi)
+  ent_spec = []
+  for x in 1:n
+    localC = psi.C[x]
+    if isdiag(localC)
+      println("Blah")
+      append!(ent_spec, [localC])
+    else
+      linkl = only(commoninds(psi.C[x], psi.AL[x]))
+      U, S, V = svd(localC, [linkl])
+      append!(ent_spec, [S])
+    end
+  end
+  return ent_spec
+end
+
+function entropies(psi::InfiniteCanonicalMPS)
+  n = nsites(psi)
+  entropies = zeros(n)
+  for x in 1:n
+    ent = 0
+    localC = psi.C[x]
+    if isdiag(localC)
+      for s in 1:size(localC)[1]
+        ent += -2*localC[s, s]^2 * log(localC[s, s])
+      end
+    else
+      linkl = only(commoninds(psi.C[x], psi.AL[x]))
+      U, S, V = svd(localC, [linkl])
+      for s in 1:size(S)[1]
+        ent += -2*S[s, s]^2 * log(S[s, s])
+      end
+    end
+    entropies[x] = ent
+  end
+  return entropies
 end

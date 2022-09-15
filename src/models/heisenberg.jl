@@ -1,11 +1,5 @@
 # H = Σⱼ (½ S⁺ⱼS⁻ⱼ₊₁ + ½ S⁻ⱼS⁺ⱼ₊₁ + SᶻⱼSᶻⱼ₊₁)
 function unit_cell_terms(::Model"heisenberg")
-  opsum = OpSum()
-  opsum += 0.5, "S+", 1, "S-", 2
-  opsum += 0.5, "S-", 1, "S+", 2
-  opsum += "Sz", 1, "Sz", 2
-  return opsum
-end
 
 """
     reference(::Model"heisenberg", ::Observable"energy"; N)

@@ -70,6 +70,8 @@ translatecelltags(T::ITensor, n::Integer) = translatecell(translatecelltags, T, 
 translatecelltags(T::ITensors.Indices, n::Integer) = translatecell(translatecelltags, T, n)
 #translatecell(T::MPO, n::Integer) = translatecell.(T, n)
 #translatecell(T::Matrix{ITensor}, n::Integer) = translatecell.(T, n)
+#translatecell(i::Index, n::Integer) = translatecell(translatecelltags, i, n)
+#translatecell(is::Union{<:Tuple,<:Vector}, n::Integer) = translatecell(translatecelltags, is, n)
 
 struct CelledVector{T,F} <: AbstractVector{T}
   data::Vector{T}

@@ -78,6 +78,7 @@ function InfiniteSum{MPO}(opsum::OpSum, s::CelledVector)
   ]
   return InfiniteSum{MPO}(mpos, translator(s))
 end
+
 # Helper function to make an MPO
 import ITensors: op
 op(::OpName"Zero", ::SiteType, s::Index) = ITensor(s', dag(s))
