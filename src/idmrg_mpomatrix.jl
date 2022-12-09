@@ -174,21 +174,21 @@ function (H::iDMRGStructure{InfiniteMPOMatrix})(x)
   end
   result = L[1]*R[1]
   for j = 2:length(L)
-    result .+=L[j].*R[j]
+    result .+= L[j]*R[j]
   end
   return noprime(result)
 end
 
 
-function (H::temporaryHamiltonian)(x)
+function (H::ITensorInfiniteMPS.temporaryHamiltonian)(x)
   n = order(x) - 2
   L = [H.effectiveL[j] * x for j in 1:length(H.effectiveL)]
   for j in 0:n-1
-    apply_mpomatrix_left!(L, H.Hmpo[H.nref+j])
+    ITensorInfiniteMPS.apply_mpomatrix_left!(L, H.Hmpo[H.nref+j])
   end
   result = L[1]*H.effectiveR[1]
   for j = 2:length(L)
-    result .+= L[j].*H.effectiveR[j]
+    result .+= L[j]*H.effectiveR[j]
   end
   return noprime(result)
 end
@@ -270,7 +270,7 @@ end
 
 function idmrg_step_single_site(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, cutoff = 1e-10)
   N = nsites(iDM)
-  nb_site = dmrg_sites(iDM)
+  nb_site = 1
 
   nbIterations =  N
   original_start = mod1(iDM.counter, N)
@@ -289,7 +289,6 @@ function idmrg_step_single_site(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_t
     starting_state = iDM.ψ.AL[start] * iDM.ψ.C[start]
     temp_H = temporaryHamiltonian(iDM.L, effective_Rs[count], iDM.Hmpo, start);
     local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol);
-    println(local_ener./6)
     temp_AL, temp_C = qr(new_x[1], commoninds(new_x[1], iDM.ψ.AL[start]), tags = tags(only(uniqueinds(new_x[1], iDM.ψ.AL[start]))))
     temp_AR, temp_Cm = qr(new_x[1], commoninds(new_x[1], iDM.ψ.AR[start]), tags = tags(only(uniqueinds(new_x[1], iDM.ψ.AR[start]))))
 
