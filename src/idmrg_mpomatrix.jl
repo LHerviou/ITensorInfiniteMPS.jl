@@ -20,6 +20,19 @@ struct temporaryHamiltonian
 end
 
 
+# struct theta
+#   xs::Vector{ITensor}
+#   nref::Int64 #leftmostsite
+# end
+#
+# function theta(iDM::iDMRGStructure, start::Int64)
+#   nb_site = dmrg_sites(iDM)
+#   xs = [iDM.ψ.AL[start] * iDM.ψ.C[start]]
+#   xs = vcat(xs, [iDM.ψ.AR[start+j-1] for j in 2:nb_site])
+#   return theta(xs, start)
+# end
+
+
 function iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix, dmrg_sites::Int64)
   N = nsites(ψ) #dmrg_sites
   l = only(commoninds(ψ.AL[0], ψ.AL[1]))
@@ -50,11 +63,11 @@ function iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix, dmrg_
   return iDMRGStructure{InfiniteMPOMatrix}(copy(ψ), Hmpo, L, R, 1, dmrg_sites);
 end
 
+
 iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix) = iDMRGStructure{InfiniteMPOMatrix}(ψ, Hmpo, 2)
 iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix, L::Vector{ITensor}, R::Vector{ITensor}, dmrg_sites::Int64) = iDMRGStructure{InfiniteMPOMatrix}(copy(ψ), Hmpo, L, R, 1, dmrg_sites)
 iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix, L::Vector{ITensor}, R::Vector{ITensor}) = iDMRGStructure{InfiniteMPOMatrix}(copy(ψ), Hmpo, L, R, 1, 2)
 iDMRGStructure(Hmpo::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS) = iDMRGStructure{InfiniteMPOMatrix}(ψ, Hmpo)
-
 
 
 function apply_mpomatrix_left!(L::Vector{ITensor}, Hmpo::Matrix{ITensor})
@@ -68,7 +81,7 @@ function apply_mpomatrix_left!(L::Vector{ITensor}, Hmpo::Matrix{ITensor})
         L[k] = L[j] * Hmpo[j, k]
         init[k] = true
       else
-        L[k] +=  L[j] * Hmpo[j, k]
+        L[k] .+=  L[j] * Hmpo[j, k]
       end
     end
   end
@@ -89,10 +102,10 @@ function apply_mpomatrix_left!(L::Vector{ITensor}, Hmpo::Matrix{ITensor}, ψ::IT
         continue
       end
       if !init[k] || isempty(L[k]) || k == j
-        L[k] = L[j] * ψ * Hmpo[j, k] * ψp
+        L[k] = ((L[j] * ψ) * Hmpo[j, k]) * ψp
         init[k] = true
       else
-        L[k] +=  L[j]  * ψ * Hmpo[j, k] * ψp
+        L[k] .+=  ((L[j]  * ψ) * Hmpo[j, k]) * ψp
       end
     end
   end
@@ -115,7 +128,7 @@ function apply_mpomatrix_right!(R::Vector{ITensor}, Hmpo::Matrix{ITensor})
         R[k] = Hmpo[k, j] * R[j]
         init[k] = true
       else
-        R[k] +=  Hmpo[k, j] * R[j]
+        R[k] .+=  Hmpo[k, j] * R[j]
       end
     end
   end
@@ -135,16 +148,16 @@ function apply_mpomatrix_right!(R::Vector{ITensor}, Hmpo::Matrix{ITensor}, ψ::I
         continue
       end
       if !init[k] || isempty(R[k]) || k == j
-        R[k] = R[j] * ψ * Hmpo[k, j] * ψp
+        R[k] = ( (R[j] * ψ) * Hmpo[k, j] ) * ψp
         init[k] = true
       else
-        R[k] +=  R[j] * ψ * Hmpo[k, j] * ψp
+        R[k] .+=  ( (R[j] * ψ) * Hmpo[k, j] ) * ψp
       end
     end
   end
   for j in 1:length(R)
     if !init[j]
-      R[j] =  ITensor(inds(R[j])...) * ψ * Hmpo[j, j] * ψp
+      R[j] =  ( (ITensor(inds(R[j])...) * ψ) * Hmpo[j, j]) * ψp
     end
   end
 end
@@ -161,7 +174,7 @@ function (H::iDMRGStructure{InfiniteMPOMatrix})(x)
   end
   result = L[1]*R[1]
   for j = 2:length(L)
-    result+=L[j]*R[j]
+    result .+=L[j].*R[j]
   end
   return noprime(result)
 end
@@ -175,7 +188,7 @@ function (H::temporaryHamiltonian)(x)
   end
   result = L[1]*H.effectiveR[1]
   for j = 2:length(L)
-    result+=L[j]*H.effectiveR[j]
+    result .+= L[j].*H.effectiveR[j]
   end
   return noprime(result)
 end
@@ -254,6 +267,67 @@ function idmrg_step_noupdate_sideC(iDM::iDMRGStructure{InfiniteMPOMatrix}; solve
 end
 
 
+
+function idmrg_step_single_site(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, cutoff = 1e-10)
+  N = nsites(iDM)
+  nb_site = dmrg_sites(iDM)
+
+  nbIterations =  N
+  original_start = mod1(iDM.counter, N)
+  effective_Rs=[iDM.R for j in 1:nbIterations];
+  local_ener=0
+  err = 0
+  site_looked = original_start + N-1
+  for j in reverse(1:nbIterations-1)
+      effective_Rs[j] = copy(effective_Rs[j+1])
+      apply_mpomatrix_right!(effective_Rs[j], iDM.Hmpo[site_looked], iDM.ψ.AR[site_looked])
+      site_looked -= 1
+  end
+
+  start = original_start
+  for count in 1:nbIterations
+    starting_state = iDM.ψ.AL[start] * iDM.ψ.C[start]
+    temp_H = temporaryHamiltonian(iDM.L, effective_Rs[count], iDM.Hmpo, start);
+    local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol);
+    println(local_ener./6)
+    temp_AL, temp_C = qr(new_x[1], commoninds(new_x[1], iDM.ψ.AL[start]), tags = tags(only(uniqueinds(new_x[1], iDM.ψ.AL[start]))))
+    temp_AR, temp_Cm = qr(new_x[1], commoninds(new_x[1], iDM.ψ.AR[start]), tags = tags(only(uniqueinds(new_x[1], iDM.ψ.AR[start]))))
+
+    #updating links
+    if count == 1
+      adjust_right_most = translatecell(translator(iDM), wδ(only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start-1])), only(commoninds(temp_Cm, temp_AR))), 1)
+      for j in 1:length(iDM.R)
+        effective_Rs[end][j] *= dag(adjust_right_most) #Also modify iDM.R
+        effective_Rs[end][j] *= prime(adjust_right_most)
+      end
+    end
+    iDM.ψ.AR[start - 1] *= wδ(only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start - 1])), only(commoninds(temp_Cm, temp_AR)))
+    iDM.ψ.AL[start + 1] *= wδ(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start + 1])), only(commoninds(temp_C, temp_AL)))
+
+    iDM.ψ.AL[start] = temp_AL
+    iDM.ψ.AR[start] = temp_AR
+    iDM.ψ.C[start-1] = temp_Cm
+    iDM.ψ.C[start] = temp_C
+    apply_mpomatrix_left!(iDM.L, iDM.Hmpo[start], iDM.ψ.AL[start])
+    start += 1
+  end
+  for j in reverse(1:N)
+    apply_mpomatrix_right!(iDM.R, iDM.Hmpo[original_start+j-1], iDM.ψ.AR[original_start+j-1])
+    iDM.R[end] -= 2*local_ener[1]/N * denseblocks(δ(inds(iDM.R[end])...))
+  end
+  for j in 1:length(iDM.R)
+    iDM.L[j]= translatecell(translator(iDM), iDM.L[j], -1)
+  end
+  for j in 1:length(iDM.R)
+    iDM.R[j]= translatecell(translator(iDM), iDM.R[j], 1)
+  end
+  return local_ener[1]/N, err
+end
+
+
+
+
+
 function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, maxdim = 20, cutoff = 1e-10)
   N = nsites(iDM)
   nb_site = dmrg_sites(iDM)
@@ -261,14 +335,14 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, m
     error("iDMRG with a step size larger than the unit cell has not been implemented")
   end
   if nb_site == 1
-    error("Single site dmrg has not been implemented")
+    return idmrg_step_singlesite(iDM; solver_tol, cutoff)
   end
   if (N÷(nb_site÷2))*(nb_site÷2) != N
     error("We require that the (nb_site÷2) divides the unitcell length")
   end
   nbIterations =  (N - nb_site)÷(nb_site÷2) + 1#(N÷(nb_site÷2)) - 1
   original_start = mod1(iDM.counter, N)
-  effective_Rs=[iDM.R for j in 1:nbIterations]
+  effective_Rs=[iDM.R for j in 1:nbIterations];
   local_ener=0
   err = 0
   site_looked = original_start + N-1
@@ -287,8 +361,8 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, m
     for j = 3:nb_site
       starting_state *= iDM.ψ.AR[start+j-1]
     end
-    temp_H = temporaryHamiltonian(iDM.L, effective_Rs[count], iDM.Hmpo, start)
-    local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol)
+    temp_H = temporaryHamiltonian(iDM.L, effective_Rs[count], iDM.Hmpo, start);
+    local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol);
     U2, S2, V2 = svd(new_x[1], commoninds(new_x[1], iDM.ψ.AL[start]); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start+1]))),
     righttags = tags(only(commoninds(iDM.ψ.AR[start+1], iDM.ψ.AR[start]))))
     err = 1 - norm(S2)
