@@ -213,6 +213,7 @@ function advance_environments(H::iDMRGStructure{InfiniteMPOMatrix})
   end
 end
 
+#=
 function idmrg_step_noupdate_sideC(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, maxdim = 20, cutoff = 1e-10)
   N = nsites(iDM)
   nb_site = dmrg_sites(iDM)
@@ -265,9 +266,10 @@ function idmrg_step_noupdate_sideC(iDM::iDMRGStructure{InfiniteMPOMatrix}; solve
   iDM.counter+=nb_site÷2
   return local_ener[1]/N, err
 end
+=#
 
 
-
+#=
 function idmrg_step_single_site(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, cutoff = 1e-10)
   N = nsites(iDM)
   nb_site = 1
@@ -322,19 +324,18 @@ function idmrg_step_single_site(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_t
   end
   return local_ener[1]/N, err
 end
-
-
-
+=#
 
 
 function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, maxdim = 20, cutoff = 1e-10)
   N = nsites(iDM)
-  nb_site = dmrg_sites(iDM)
+  nb_site = ITensorInfiniteMPS.dmrg_sites(iDM)
   if nb_site > N
     error("iDMRG with a step size larger than the unit cell has not been implemented")
   end
   if nb_site == 1
-    return idmrg_step_singlesite(iDM; solver_tol, cutoff)
+    #return idmrg_step_single_site(iDM; solver_tol, cutoff)
+    error("Not fully implemented")
   end
   if (N÷(nb_site÷2))*(nb_site÷2) != N
     error("We require that the (nb_site÷2) divides the unitcell length")
@@ -348,34 +349,35 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, m
   for j in reverse(1:nbIterations-1)
       effective_Rs[j] = copy(effective_Rs[j+1])
       for k in 0:nb_site÷2-1
-        apply_mpomatrix_right!(effective_Rs[j], iDM.Hmpo[site_looked], iDM.ψ.AR[site_looked])
+        ITensorInfiniteMPS.apply_mpomatrix_right!(effective_Rs[j], iDM.Hmpo[site_looked], iDM.ψ.AR[site_looked])
         site_looked -= 1
       end
   end
   adjust_left = 0
   adjust_right_most = 0
   start = original_start
+  current_L = copy(iDM.L)
   for count in 1:nbIterations
     starting_state = iDM.ψ.AL[start] * iDM.ψ.C[start] * iDM.ψ.AR[start+1]
     for j = 3:nb_site
       starting_state *= iDM.ψ.AR[start+j-1]
     end
-    temp_H = temporaryHamiltonian(iDM.L, effective_Rs[count], iDM.Hmpo, start);
+    temp_H = ITensorInfiniteMPS.temporaryHamiltonian(current_L, effective_Rs[count], iDM.Hmpo, start);
     local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol);
     U2, S2, V2 = svd(new_x[1], commoninds(new_x[1], iDM.ψ.AL[start]); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start+1]))),
     righttags = tags(only(commoninds(iDM.ψ.AR[start+1], iDM.ψ.AR[start]))))
     err = 1 - norm(S2)
     S2 = S2 / norm(S2)
     iDM.ψ.AL[start] = U2
-    temp_R, temp_C = diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start-1])
+    temp_R, temp_C = ITensorInfiniteMPS.diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start-1])
     if count == 1 #&& nbIterations > 1
-      adjust_right_most = translatecell(translator(iDM), wδ(only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start-1])), only(commoninds(temp_C, temp_R))), 1)
+      adjust_right_most = translatecell(translator(iDM), ITensorInfiniteMPS.wδ(only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start-1])), only(commoninds(temp_C, temp_R))), 1)
       for j in 1:length(iDM.R)
         effective_Rs[end][j] *= dag(adjust_right_most) #Also modify iDM.R
         effective_Rs[end][j] *= prime(adjust_right_most)
       end
     end
-    iDM.ψ.AR[start - 1] *= wδ(only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start-1])), only(commoninds(temp_C, temp_R)))
+    iDM.ψ.AR[start - 1] *= ITensorInfiniteMPS.wδ(only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start-1])), only(commoninds(temp_C, temp_R)))
     iDM.ψ.AR[start] = temp_R
     iDM.ψ.C[start-1] = temp_C
     iDM.ψ.C[start] = S2
@@ -387,60 +389,75 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, m
       err += 1 - norm(S2)
       S2 = S2 / norm(S2)
       iDM.ψ.AL[start+j-1] = U2
-      temp_R, temp_C = diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start+j-2])
-      iDM.ψ.AR[start+j-2] *= wδ(dag(only(uniqueinds(iDM.ψ.AR[start+j-2], iDM.ψ.AL[start+j-2], iDM.ψ.AR[start+j-3]))), only(commoninds(temp_C, temp_R)))
+      temp_R, temp_C = ITensorInfiniteMPS.diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start+j-2])
+      iDM.ψ.AR[start+j-2] *= ITensorInfiniteMPS.wδ(dag(only(uniqueinds(iDM.ψ.AR[start+j-2], iDM.ψ.AL[start+j-2], iDM.ψ.AR[start+j-3]))), only(commoninds(temp_C, temp_R)))
       iDM.ψ.AR[start+j-1] = temp_R
       iDM.ψ.C[start+j-2] = temp_C
       iDM.ψ.C[start+j-1] = S2
     end
     if count != nbIterations
       iDM.ψ.AR[start+nb_site-1] = V2
-      temp_R, temp_C = diag_ortho_polar_both(S2 * iDM.ψ.AR[start+nb_site-1], iDM.ψ.C[start+nb_site-1])
+      temp_R, temp_C = ITensorInfiniteMPS.diag_ortho_polar_both(S2 * iDM.ψ.AR[start+nb_site-1], iDM.ψ.C[start+nb_site-1])
       iDM.ψ.AL[start+nb_site-1] = temp_R
       iDM.ψ.C[start+nb_site-1] = temp_C
-      adjust_left = wδ(only(commoninds(temp_C, temp_R)), dag(only(uniqueinds(iDM.ψ.AL[start+nb_site], iDM.ψ.AL[start+nb_site+1], iDM.ψ.AR[start+nb_site]))) )
+      adjust_left = ITensorInfiniteMPS.wδ(only(commoninds(temp_C, temp_R)), dag(only(uniqueinds(iDM.ψ.AL[start+nb_site], iDM.ψ.AL[start+nb_site+1], iDM.ψ.AR[start+nb_site]))) )
       iDM.ψ.AL[start+nb_site] *= adjust_left
     else
       if nb_site == N
-        adjust_right = wδ(dag(only(uniqueinds(V2, S2, iDM.ψ.AR[start+nb_site-1]))), dag(only(uniqueinds(iDM.ψ.AR[start+nb_site], iDM.ψ.AL[start+nb_site], iDM.ψ.C[start+nb_site]))))
+        adjust_right = ITensorInfiniteMPS.wδ(dag(only(uniqueinds(V2, S2, iDM.ψ.AR[start+nb_site-1]))), dag(only(uniqueinds(iDM.ψ.AR[start+nb_site], iDM.ψ.AL[start+nb_site], iDM.ψ.C[start+nb_site]))))
         iDM.ψ.AR[start+nb_site-1] = V2 #*  adjust_right
         iDM.ψ.AR[start+nb_site-1] *=  adjust_right
       else
         iDM.ψ.AR[start+nb_site-1] = V2 #*  adjust_right
       end
-      temp = wδ(only(uniqueinds(iDM.ψ.AR[start+nb_site], iDM.ψ.AL[start+nb_site], iDM.ψ.C[start+nb_site])), only(commoninds( iDM.ψ.C[start+nb_site], iDM.ψ.AL[start+nb_site])) )
-      temp_R, temp_C = diag_ortho_polar_both(S2 * iDM.ψ.AR[start+nb_site-1], temp)
+      temp = ITensorInfiniteMPS.wδ(only(uniqueinds(iDM.ψ.AR[start+nb_site], iDM.ψ.AL[start+nb_site], iDM.ψ.C[start+nb_site])), only(commoninds( iDM.ψ.C[start+nb_site], iDM.ψ.AL[start+nb_site])) )
+      temp_R, temp_C = ITensorInfiniteMPS.diag_ortho_polar_both(S2 * iDM.ψ.AR[start+nb_site-1], temp)
       iDM.ψ.AL[start+nb_site-1] = temp_R
       iDM.ψ.C[start+nb_site-1] = temp_C
-      adjust_left = wδ(only(commoninds(temp_C, temp_R)), dag(only(uniqueinds(iDM.ψ.AL[start+nb_site], iDM.ψ.AL[start+nb_site+1], iDM.ψ.AR[start+nb_site]))) )
+      adjust_left = ITensorInfiniteMPS.wδ(only(commoninds(temp_C, temp_R)), dag(only(uniqueinds(iDM.ψ.AL[start+nb_site], iDM.ψ.AL[start+nb_site+1], iDM.ψ.AR[start+nb_site]))) )
       iDM.ψ.AL[start+nb_site] *= adjust_left
     end
-    for j in 1:nb_site÷2
-      if j == 1 && nbIterations == 1
-        apply_mpomatrix_left!(iDM.L, iDM.Hmpo[start+j-1], translatecell(translator(iDM), dag(adjust_left), -1)*iDM.ψ.AL[start+j-1])
-      else
-        apply_mpomatrix_left!(iDM.L, iDM.Hmpo[start+j-1], iDM.ψ.AL[start+j-1])
+
+    if count != nbIterations
+      for j in 1:nb_site÷2
+        if j == 1 && nbIterations == 1
+          ITensorInfiniteMPS.apply_mpomatrix_left!(current_L, iDM.Hmpo[start+j-1], translatecell(translator(iDM), dag(adjust_left), -1)*iDM.ψ.AL[start+j-1])
+        else
+          ITensorInfiniteMPS.apply_mpomatrix_left!(current_L, iDM.Hmpo[start+j-1], iDM.ψ.AL[start+j-1])
+        end
+        #iDM.L[1] -= local_ener[1]/N * denseblocks(δ(inds(iDM.L[1])...))
       end
-      #iDM.L[1] -= local_ener[1]/N * denseblocks(δ(inds(iDM.L[1])...))
+      start += nb_site÷2
     end
-    iDM.counter+=nb_site÷2
-    start += nb_site÷2
   end
-  for j in reverse((N-nb_site + nb_site÷2 + 1):N)
-    apply_mpomatrix_right!(iDM.R, iDM.Hmpo[original_start+j-1], iDM.ψ.AR[original_start+j-1])
-    iDM.R[end] -= local_ener[1]/length((N-nb_site + nb_site÷2 + 1):N) * denseblocks(δ(inds(iDM.R[end])...))
+  for j in 1:N÷2
+    if j == 1
+      ITensorInfiniteMPS.apply_mpomatrix_left!(iDM.L, iDM.Hmpo[original_start+j-1], translatecell(translator(iDM), dag(adjust_left), -1)*iDM.ψ.AL[original_start+j-1])
+    else
+      ITensorInfiniteMPS.apply_mpomatrix_left!(iDM.L, iDM.Hmpo[original_start+j-1], iDM.ψ.AL[original_start+j-1])
+    end
+    iDM.L[1] -= local_ener[1]/N * ITensorInfiniteMPS.denseblocks(ITensorInfiniteMPS.δ(inds(iDM.L[1])...))
   end
-  if start <= N
-    for j in 1:length(iDM.R)
-      iDM.R[j]= translatecell(translator(iDM), iDM.R[j], 1)
+  for j in reverse(N÷2+1:N)#reverse((N-nb_site + nb_site÷2 + 1):N)
+    ITensorInfiniteMPS.apply_mpomatrix_right!(iDM.R, iDM.Hmpo[original_start+j-1], iDM.ψ.AR[original_start+j-1])
+    iDM.R[end] -= local_ener[1]/N * denseblocks(δ(inds(iDM.R[end])...))
+  end
+  if original_start + N÷2 >= N
+    for j in 1:length(iDM.L)
+      iDM.L[j]= translatecell(translator(iDM), iDM.L[j], -1)
     end
   else
     for j in 1:length(iDM.R)
-      iDM.L[j]= translatecell(translator(iDM), iDM.L[j], -1)
+      iDM.R[j]= translatecell(translator(iDM), iDM.R[j], 1)
     end
   end
+  iDM.counter += N÷2
   return local_ener[1]/N, err
 end
+
+
+
+
 
 
 

@@ -53,6 +53,7 @@ end
 
 #Transfer the functional properties
 #translatecell(translator, T::ITensor, n::Integer) = translator(T, n)
+translatecell(translator::Function, T, n) = translator(T, n)
 function translatecell(translator::Function, T::ITensor, n::Integer)
   return ITensors.setinds(T, translatecell(translator, inds(T), n))
 end

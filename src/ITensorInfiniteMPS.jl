@@ -53,7 +53,7 @@ include("vumps_localham.jl")
 include("vumps_nonlocalham.jl")
 include("vumps_mpo.jl")
 include("idmrg_mpomatrix.jl")
-include("idmrg_auxiliary.jl")
+#include("idmrg_auxiliary.jl")
 
 export Cell,
   CelledVector,
