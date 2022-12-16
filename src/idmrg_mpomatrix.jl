@@ -148,16 +148,16 @@ function apply_mpomatrix_right!(R::Vector{ITensor}, Hmpo::Matrix{ITensor}, ψ::I
         continue
       end
       if !init[k] || isempty(R[k]) || k == j
-        R[k] = ( (R[j] * ψ) * Hmpo[k, j] ) * ψp
+        R[k] = ((R[j] * ψ) * Hmpo[k, j])  * ψp
         init[k] = true
       else
-        R[k] .+=  ( (R[j] * ψ) * Hmpo[k, j] ) * ψp
+        R[k] .+=  ((R[j] * ψ) * Hmpo[k, j])  * ψp
       end
     end
   end
   for j in 1:length(R)
     if !init[j]
-      R[j] =  ( (ITensor(inds(R[j])...) * ψ) * Hmpo[j, j]) * ψp
+      R[j] =   ITensor(inds(R[j])...) * ψ * Hmpo[j, j] * ψp
     end
   end
 end
@@ -211,8 +211,47 @@ function advance_environments(H::iDMRGStructure{InfiniteMPOMatrix})
   for j in 1:length(H.R)
     H.L[j]= translatecell(translator(H), H.L[j], -1)
   end
+  if original_start + N÷2 >= N
+    for j in 1:length(iDM.L)
+      iDM.L[j]= translatecell(translator(iDM), iDM.L[j], -1)
+    end
+  else
+    for j in 1:length(iDM.R)
+      iDM.R[j]= translatecell(translator(iDM), iDM.R[j], 1)
+    end
+  end
 end
 
+
+function set_environments_defaultposition(H::iDMRGStructure{InfiniteMPOMatrix})
+  N = nsites(H)
+  if mod1(H.counter, N) == 1
+    println("Already at the correct position")
+    return 0
+  end
+  nb_steps = mod(1-H.counter, N)
+  start = mod1(H.counter, N)
+  for j in 0:nb_steps-1
+    apply_mpomatrix_left!(H.L, H.Hmpo[start+j], H.ψ.AL[start + j])
+  end
+  for j in reverse(start+nb_steps-N:start + N - 1)
+    apply_mpomatrix_right!(H.R, H.Hmpo[j], H.ψ.AR[j])
+  end
+  shift_cell = getcell(inds(H.L[1])[1]) - 0
+  if shift_cell != 0
+    for j in 1:length(H.L)
+      H.L[j]= translatecell(translator(H), H.L[j], -shift_cell)
+    end
+  end
+  shift_cell = getcell(inds(H.R[1])[1]) - 1
+  if shift_cell != 0
+    for j in 1:length(H.R)
+      H.R[j]= translatecell(translator(H), H.R[j], -shift_cell)
+    end
+  end
+  H.counter += nb_steps
+  return 0
+end
 #=
 function idmrg_step_noupdate_sideC(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, maxdim = 20, cutoff = 1e-10)
   N = nsites(iDM)
@@ -358,13 +397,15 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, m
   start = original_start
   current_L = copy(iDM.L)
   for count in 1:nbIterations
+    #build the local tensor start .... start + nb_site - 1
     starting_state = iDM.ψ.AL[start] * iDM.ψ.C[start] * iDM.ψ.AR[start+1]
     for j = 3:nb_site
       starting_state *= iDM.ψ.AR[start+j-1]
     end
+    #build_local_Hamiltonian
     temp_H = temporaryHamiltonian(current_L, effective_Rs[count], iDM.Hmpo, start);
-    local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol);
-    U2, S2, V2 = svd(new_x[1], commoninds(new_x[1], iDM.ψ.AL[start]); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start+1]))),
+    @time local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol);
+    @time U2, S2, V2 = svd(new_x[1], commoninds(new_x[1], iDM.ψ.AL[start]); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start+1]))),
     righttags = tags(only(commoninds(iDM.ψ.AR[start+1], iDM.ψ.AR[start]))))
     err = 1 - norm(S2)
     S2 = S2 / norm(S2)
@@ -439,10 +480,13 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, m
     iDM.L[1] -= local_ener[1]/N * denseblocks(δ(inds(iDM.L[1])...))
   end
   for j in reverse(N÷2+1:N)#reverse((N-nb_site + nb_site÷2 + 1):N)
+    if j == N && length(commoninds(iDM.R[1], iDM.ψ.AR[original_start+j-1]))==0
+      temp
+    end
     apply_mpomatrix_right!(iDM.R, iDM.Hmpo[original_start+j-1], iDM.ψ.AR[original_start+j-1])
     iDM.R[end] -= local_ener[1]/N * denseblocks(δ(inds(iDM.R[end])...))
   end
-  if original_start + N÷2 >= N
+  if original_start + N÷2 >= N+1
     for j in 1:length(iDM.L)
       iDM.L[j]= translatecell(translator(iDM), iDM.L[j], -1)
     end
