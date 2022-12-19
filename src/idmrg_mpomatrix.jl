@@ -211,15 +211,6 @@ function advance_environments(H::iDMRGStructure{InfiniteMPOMatrix})
   for j in 1:length(H.R)
     H.L[j]= translatecell(translator(H), H.L[j], -1)
   end
-  if original_start + N÷2 >= N
-    for j in 1:length(iDM.L)
-      iDM.L[j]= translatecell(translator(iDM), iDM.L[j], -1)
-    end
-  else
-    for j in 1:length(iDM.R)
-      iDM.R[j]= translatecell(translator(iDM), iDM.R[j], 1)
-    end
-  end
 end
 
 
