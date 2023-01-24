@@ -1,68 +1,35 @@
-mutable struct iDMRGStructure{Tmpo}
+mutable struct iDMRGStructure{InfiniteMPO}
   ψ::InfiniteCanonicalMPS
-  Hmpo::Tmpo
-  L::Vector{ITensor}
-  R::Vector{ITensor}
+  Hmpo::InfiniteMPO
+  L::ITensor
+  R::ITensor
   counter::Int64
   dmrg_sites::Int64
 end
-translator(IDM::iDMRGStructure) = translator(IDM.ψ)
-nsites(IDM::iDMRGStructure) = nsites(IDM.ψ)
-dmrg_sites(IDM::iDMRGStructure) = IDM.dmrg_sites
-Base.copy(iDM::iDMRGStructure) = iDMRGStructure{typeof(iDM.Hmpo), typeof(iDM.L)}(copy(iDM.ψ), iDM.Hmpo, copy(iDM.L), copy(iDM.R), iDM.counter, iDM.dmrg_sites)
 
-
-struct temporaryHamiltonian{Tmpo}
-  effectiveL::Vector{ITensor}
-  effectiveR::Vector{ITensor}
-  Hmpo::Tmpo
+struct temporaryHamiltonian{InfiniteMPO}
+  effectiveL::ITensor
+  effectiveR::ITensor
+  Hmpo::InfiniteMPO
   nref::Int64 #leftmostsite
 end
 
 
-# struct theta
-#   xs::Vector{ITensor}
-#   nref::Int64 #leftmostsite
-# end
-#
-# function theta(iDM::iDMRGStructure, start::Int64)
-#   nb_site = dmrg_sites(iDM)
-#   xs = [iDM.ψ.AL[start] * iDM.ψ.C[start]]
-#   xs = vcat(xs, [iDM.ψ.AR[start+j-1] for j in 2:nb_site])
-#   return theta(xs, start)
-# end
-
-
-function iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix, dmrg_sites::Int64)
+function iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPO, dmrg_sites::Int64)
   N = nsites(ψ) #dmrg_sites
   l = only(commoninds(ψ.AL[0], ψ.AL[1]))
   r = only(commoninds(ψ.AR[N+1], ψ.AR[N]))
-  L = [ITensor(l, prime(dag(l))) for j in 1:size(Hmpo[1])[1]]
-  for j = 2:length(L)-1
-    for k in 1:j
-      temp_l = filterinds(Hmpo[1][j, k], tags = "Link")
-      for ind in temp_l
-        if ind.dir == ITensors.In
-          L[j] = ITensor(l, prime(dag(l)), dag(ind))
-        end
-      end
-    end
-  end
-  R = [ITensor(r, prime(dag(r))) for j in 1:size(Hmpo[N])[2]]
-  for j = 2:length(R)-1
-    for k in j:length(R)
-      temp_r = filterinds(Hmpo[N][k, j], tags = "Link")
-      for ind in temp_r
-        if ind.dir == ITensors.Out
-          R[j] = ITensor(r, prime(dag(r)), dag(ind))
-        end
-      end
-    end
-  end
-  L[end] = δ(l, prime(dag(l))); R[1] = δ(r, prime(dag(r)));
+  l_mpo = only(commoninds(Hmpo[0], Hmpo[1]))
+  r_mpo = only(commoninds(Hmpo[N+1], Hmpo[N]))
+  L = ITensor(l, prime(dag(l)), l_mpo)
+  L[end] = δ(l, prime(dag(l)));
+
+  R = ITensor(r, prime(dag(r)))
+  R[1] = δ(r, prime(dag(r)));
   return iDMRGStructure{InfiniteMPOMatrix}(copy(ψ), Hmpo, L, R, 1, dmrg_sites);
 end
 
+#=
 
 iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix) = iDMRGStructure{InfiniteMPOMatrix}(ψ, Hmpo, 2)
 iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix, L::Vector{ITensor}, R::Vector{ITensor}, dmrg_sites::Int64) = iDMRGStructure{InfiniteMPOMatrix}(copy(ψ), Hmpo, L, R, 1, dmrg_sites)
@@ -180,7 +147,7 @@ function (H::iDMRGStructure{InfiniteMPOMatrix})(x)
 end
 
 
-function (H::temporaryHamiltonian{InfiniteMPOMatrix})(x)
+function (H::temporaryHamiltonian)(x)
   n = order(x) - 2
   L = [H.effectiveL[j] * x for j in 1:length(H.effectiveL)]
   for j in 0:n-1
@@ -394,7 +361,7 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPOMatrix}; solver_tol = 1e-8, m
       starting_state *= iDM.ψ.AR[start+j-1]
     end
     #build_local_Hamiltonian
-    temp_H = temporaryHamiltonian{InfiniteMPOMatrix}(current_L, effective_Rs[count], iDM.Hmpo, start);
+    temp_H = temporaryHamiltonian(current_L, effective_Rs[count], iDM.Hmpo, start);
     local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol);
     U2, S2, V2 = svd(new_x[1], commoninds(new_x[1], iDM.ψ.AL[start]); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start+1]))),
     righttags = tags(only(commoninds(iDM.ψ.AR[start+1], iDM.ψ.AR[start]))))
