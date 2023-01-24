@@ -271,21 +271,21 @@ function matrixITensorToITensor(H::Matrix{ITensor}, com_inds, left_dir, right_di
 
   lx, ly = size(H)
   #Generate in order the leftbasis
-  left_basis = init_left ? [Index(QN() => 1, dir = left_dir)] : (valtype(com_inds)[]) #Dummy index for the first index
+  left_basis = init_left ? [Index(QN() => 1, dir = left_dir)] : (valtype(com_inds)[]) #Dummy index for the first line
   for k in 1:ly
     for j in 1:lx
       append!(left_basis, filter( x->dir(x) == left_dir, uniqueinds(H[j, k], com_inds)))
     end
   end
-  init_right && append!(left_basis, [Index(QN() => 1, dir = left_dir)]) #Dummy index for the last index
+  init_right && append!(left_basis, [Index(QN() => 1, dir = left_dir)]) #Dummy index for the last line
 
-  right_basis = init_left ? [Index(QN() => 1, dir = right_dir)] : (valtype(com_inds)[])
+  right_basis = init_left ? [Index(QN() => 1, dir = right_dir)] : (valtype(com_inds)[]) #Dummy index for the first column
   for k in 1:lx
     for j in 1:ly
       append!(right_basis, filter( x->dir(x) == right_dir, uniqueinds(H[j, k], com_inds)))
     end
   end
-  init_right && append!(right_basis, [Index(QN() => 1, dir = right_dir)]) #Dummy index for the last index
+  init_right && append!(right_basis, [Index(QN() => 1, dir = right_dir)]) #Dummy index for the last column
 
   left_block = Vector{Pair{QN, Int64}}()
   dic_inv_left_ind = Dict{Tuple{UInt64, Int64}, Int64}()
@@ -307,13 +307,14 @@ function matrixITensorToITensor(H::Matrix{ITensor}, com_inds, left_dir, right_di
   end
   new_right_index = Index(right_block, dir = right_dir, tags = "right_link")
 
-  #Determine the non-zero blocks
+  #Determine the non-zero blocks, not efficient in memory for now TODO: improve memory use
   temp_block = Block{4}[]
   elements = []
   for x in 1:lx
     for y in 1:ly
       isempty(H[x, y]) && continue
       tli = commoninds(H[x, y], left_basis)
+      #This first part find which structure the local Ham has and ensure H[x, y] is properly ordered
       case = 0
       if !isempty(tli)
         li = only(tli)
@@ -321,7 +322,7 @@ function matrixITensorToITensor(H::Matrix{ITensor}, com_inds, left_dir, right_di
         if !isempty(tri)
           ri = only(tri)
           T = permute(H[x, y], com_inds..., li, ri, allow_alias = true)
-          case = 3
+          case = 3 #This is the default case, both legs exists
         else
           !(y == 1 || (x==lx && y ==ly )) && error("Incompatible leg")
           T = permute(H[x, y], com_inds..., li, allow_alias = true)
@@ -340,6 +341,7 @@ function matrixITensorToITensor(H::Matrix{ITensor}, com_inds, left_dir, right_di
         end
       end
       for (n, b) in enumerate(eachnzblock(T))
+        norm(T[b]) == 0 && continue
         if case == 0
           if x==1
             append!(temp_block, [Block(b[1], b[2], dic_inv_left_ind[left_basis[1].id, 1], dic_inv_right_ind[right_basis[1].id, 1])])
@@ -352,10 +354,12 @@ function matrixITensorToITensor(H::Matrix{ITensor}, com_inds, left_dir, right_di
           append!(temp_block, [Block(b[1], b[2], dic_inv_left_ind[li.id, b[3]], dic_inv_right_ind[right_basis[1].id, 1])])
         elseif case == 2
           append!(temp_block, [Block(b[1], b[2], dic_inv_left_ind[left_basis[end].id, 1], dic_inv_right_ind[ri.id, b[3]])])
-        elseif case == 3
+        elseif case == 3 #Default case
           append!(temp_block, [Block(b[1], b[2], dic_inv_left_ind[li.id, b[3]], dic_inv_right_ind[ri.id, b[4]])])
+        else
+          println("Not treated case")
         end
-        append!(elements, [T[n]])
+        append!(elements, [T[b]])
       end
     end
   end
