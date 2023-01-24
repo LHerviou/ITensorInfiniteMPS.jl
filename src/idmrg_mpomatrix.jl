@@ -9,7 +9,7 @@ end
 translator(IDM::iDMRGStructure) = translator(IDM.ψ)
 nsites(IDM::iDMRGStructure) = nsites(IDM.ψ)
 dmrg_sites(IDM::iDMRGStructure) = IDM.dmrg_sites
-Base.copy(iDM::iDMRGStructure) = iDMRGStructure{typeof(iDM.Hmpo), typeof(iDM.L)}(copy(iDM.ψ), iDM.Hmpo, copy(iDM.L), copy(iDM.R), iDM.counter, iDM.dmrg_sites)
+Base.copy(iDM::iDMRGStructure) = iDMRGStructure{typeof(iDM.Hmpo)}(copy(iDM.ψ), iDM.Hmpo, copy(iDM.L), copy(iDM.R), iDM.counter, iDM.dmrg_sites)
 
 
 struct temporaryHamiltonian{Tmpo}

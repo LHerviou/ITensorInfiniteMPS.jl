@@ -22,6 +22,8 @@ function iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPO, dmrg_sites:
   l_mpo = only(commoninds(Hmpo[0], Hmpo[1]))
   r_mpo = only(commoninds(Hmpo[N+1], Hmpo[N]))
   L = ITensor(l, prime(dag(l)), l_mpo)
+  lmax = length(l_mpo.space)
+  dim = 
   L[end] = δ(l, prime(dag(l)));
 
   R = ITensor(r, prime(dag(r)))
