@@ -20,6 +20,33 @@ iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPO, L::ITensor, R::ITens
 iDMRGStructure(Hmpo::InfiniteMPO, ψ::InfiniteCanonicalMPS) = iDMRGStructure(ψ, Hmpo)
 
 
+#test a preallocated temporaryHamiltonian
+#RESULT: NO SPEEDING UP AS OF NOW
+
+# struct temporaryHamiltonian_prealloc{Tmpo, Tenv}
+#   effectiveL::Tenv
+#   effectiveR::Tenv
+#   Hmpo::Tmpo
+#   nref::Int64 #leftmostsite
+#   pre_allocated::Vector{ITensor}
+# end
+#
+#
+# function temporaryHamiltonian_prealloc{InfiniteMPO, ITensor}(L::ITensor, R::ITensor, Hmpo::InfiniteMPO, nref::Int64, x::ITensor)
+#   n = order(x) - 2
+#   pre_allocated = Vector{ITensor}()
+#   start = nref
+#   append!(pre_allocated, [randomITensor(uniqueinds(L, x)..., uniqueinds(x, L)...)])
+#   for j in 0:n-1
+#     append!(pre_allocated, [randomITensor(uniqueinds(pre_allocated[end], Hmpo[start+j])..., uniqueinds(Hmpo[start+j], pre_allocated[end])...)])
+#   end
+#   return temporaryHamiltonian_prealloc{InfiniteMPO, ITensor}(L, R, Hmpo, nref, pre_allocated)
+# end
+
+
+
+
+
 
 function apply_mpomatrix_left(L::ITensor, Hmpo::ITensor)
   return L * Hmpo
@@ -59,6 +86,18 @@ function (H::temporaryHamiltonian{InfiniteMPO, ITensor})(x)
   end
   return noprime(L*R)
 end
+
+# function (H::temporaryHamiltonian_prealloc{InfiniteMPO, ITensor})(x)
+#   n = order(x) - 2
+#   L = H.effectiveL
+#   R = H.effectiveR
+#   start = H.nref
+#   H.pre_allocated[1] .= L .* x
+#   for j in 1:n
+#     H.pre_allocated[j+1] .= H.pre_allocated[j] .* H.Hmpo[start+j-1]
+#   end
+#   return noprime(H.pre_allocated[end]*R)
+# end
 
 
 function advance_environments(H::iDMRGStructure{InfiniteMPO})
@@ -141,6 +180,7 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPO, ITensor}; solver_tol = 1e-8
     end
     #build_local_Hamiltonian
     temp_H = temporaryHamiltonian{InfiniteMPO, ITensor}(current_L, effective_Rs[count], iDM.Hmpo, start);
+    #temp_H = temporaryHamiltonian_prealloc{InfiniteMPO, ITensor}(current_L, effective_Rs[count], iDM.Hmpo, start, starting_state);
     local_ener, new_x = eigsolve(temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol);
     U2, S2, V2 = svd(new_x[1], commoninds(new_x[1], iDM.ψ.AL[start]); maxdim=maxdim, cutoff=cutoff, lefttags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start+1]))),
     righttags = tags(only(commoninds(iDM.ψ.AR[start+1], iDM.ψ.AR[start]))))
@@ -233,99 +273,6 @@ function idmrg_step(iDM::iDMRGStructure{InfiniteMPO, ITensor}; solver_tol = 1e-8
     iDM.R = translatecell(translator(iDM), iDM.R, 1)
   end
 
-
   iDM.counter += N÷2
   return local_ener[1]/N, err
 end
-
-
-
-
-
-
-
-#=
-
-function idmrg(iDM::iDMRGStructure{InfiniteMPOMatrix}; nb_iterations = 10, output_level = 0, mixer = false, ener_tol=0, α = 0.001, kwargs...)
-  eners = Float64[]
-  errs = Float64[]
-  ener = 0; err = 0
-  for j in 1:nb_iterations
-  #  if !mixer
-      ener, err = idmrg_step(iDM; kwargs...)
-      append!(eners, ener)
-      append!(errs, err)
-      if j > 5
-        if maximum([abs(eners[end-j+1] - eners[end-j]) for j in 1:5])< ener_tol
-          println("Early finish")
-          return eners, errs
-        end
-      end
-  #  else
-  #    ener, err = idmrg_step_with_mixer(iDM; α = α, kwargs...)
-  #  end
-    if output_level == 1
-      println("Energy after iteration $j is $ener")
-    end
-  end
-  return eners, errs
-end
-
-
-function test_validity_imps(ψ::InfiniteCanonicalMPS; prec = 1e-8)
-  for j = 1:nsites(ψ)
-    @assert norm(ψ.AL[j]*ψ.C[j] - ψ.C[j-1]*ψ.AR[j])<prec
-  end
-end
-
-struct effectiveHam
-  H::ITensor
-end
-
-function (H::effectiveHam)(x)
-  return noprime(H.H*x)
-end
-
-
-
-function build_two_local_hamiltonian(Hl, Hr, L, R)
-  tempL = copy(L)
-  apply_mpomatrix_left!(tempL, Hl)
-  apply_mpomatrix_left!(tempL, Hr)
-  temp = tempL[1] *  R[1]
-  for j in 2:length(tempL)
-    temp += tempL[j] * R[j]
-  end
-  return effectiveHam(temp)
-end
-
-function evaluate_unitarity(ψ::InfiniteCanonicalMPS)
-  s = siteinds(only, ψ)
-  l = linkinds(only, ψ.AL)
-  r = linkinds(only, ψ.AR)
-  println("Doing left")
-  for j in 1:nsites(ψ)
-    println(norm( δ(l[j-1], prime(dag(l[j-1]))) * ψ.AL[j] * δ(dag(s[j]), prime(s[j]))* dag(prime(ψ.AL[j])) - denseblocks(δ(l[j], prime(dag(l[j])))) ))
-  end
-  println("Doing right")
-  for j in 1:nsites(ψ)
-    println(norm( δ(dag(r[j]), prime(r[j])) * ψ.AR[j] * δ(dag(s[j]), prime(s[j]))* dag(prime(ψ.AR[j])) - denseblocks(δ(dag(r[j-1]), prime(r[j-1]))) ))
-  end
-end
-
-
-function evaluate_unitarity_left(ψ::InfiniteCanonicalMPS, j::Int64)
-  s = siteinds(only, ψ)
-  l = linkinds(only, ψ.AL)
-  r = linkinds(only, ψ.AR)
-  println(norm( δ(l[j-1], prime(dag(l[j-1]))) * ψ.AL[j] * δ(dag(s[j]), prime(s[j]))* dag(prime(ψ.AL[j])) - denseblocks(δ(l[j], prime(dag(l[j])))) ))
-  return  δ(l[j-1], prime(dag(l[j-1]))) * ψ.AL[j] * δ(dag(s[j]), prime(s[j]))* dag(prime(ψ.AL[j]))
-end
-
-function evaluate_unitarity_right(ψ::InfiniteCanonicalMPS, j::Int64)
-  s = siteinds(only, ψ)
-  l = linkinds(only, ψ.AL)
-  r = linkinds(only, ψ.AR)
-  println(norm( δ(dag(r[j]), prime(r[j])) * ψ.AR[j] * δ(dag(s[j]), prime(s[j]))* dag(prime(ψ.AR[j])) - denseblocks(δ(dag(r[j-1]), prime(r[j-1]))) ))
-end
- =#

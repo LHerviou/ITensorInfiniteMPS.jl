@@ -1,4 +1,3 @@
-
 function ITensors.NDTensors.qr_positive(M::AbstractMatrix; full = false)
   sparseQ, R = qr(M)
 
