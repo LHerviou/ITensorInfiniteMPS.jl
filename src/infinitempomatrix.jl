@@ -142,9 +142,16 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
  #we now use the orthonormality
  temp = sqrt.(lambda); temp = 1 ./ temp
  new_V = temp_M * noprime(u) * temp
- new_right_ind = only(commoninds(new_V, v))
- R = dag(new_V) * temp_M / tr(H[3, 3]) * dag(cR)
- new_V = dag(cL) * new_V
+ #println("Before")
+ #println((dag(prime(new_V, commoninds(new_V, v))) * new_V).tensor)
+ #new_right_ind = only(commoninds(new_V, v))
+ R = dag(new_V) * temp_M# / tr(H[3, 3])
+ Q, R, new_right_ind = qr(R, commoninds(R, new_V), tags = tags(right_ind), dir = dir(right_ind), positive = true, dilatation = 1)
+ R = R*dag(cR)/ tr(H[3, 3])
+ new_V = dag(cL) * new_V * Q
+ #println("After")
+ #println((dag(prime(new_V, commoninds(new_V, R))) * new_V).tensor)
+ #println(norm(new_V*R - dag(cL)*temp_M*dag(cR)))
  #newV, R, qR_ind = qr(cL*temp_M*cR, [s..., cLind], tags = tags(right_ind), dir = dir(right_ind), positive = false, dilatation = 1)
  #newV, R, qR_ind = qr(tr(cL*temp_M*cR), [cLind], tags = tags(right_ind), dir = dir(right_ind), positive = false, dilatation = 1)
  #newV = dag(cL)*newV; R = R*dag(cR)
@@ -191,13 +198,59 @@ function block_QR_for_left_canonical(H::InfiniteMPOMatrix)
   # b  V
   # c  d  1
   new_H = copy(H.data)
+  Rs = ITensor[]
+  ts = ITensor[]
   for j in 1:nsites(H)
     new_H[j], R, t = block_QR_for_left_canonical(new_H[j])
     new_H[j+1] = apply_gauge_on_left(new_H[j+1], R, t)
+    append!(Rs, [R]); append!(ts, [t])
   end
-  return InfiniteMPOMatrix(new_H)
+  return InfiniteMPOMatrix(new_H), CelledVector(Rs, translator(new_H)), CelledVector(ts, translator(new_H))
 end
 
+function check_convergence_left_canonical(newH, Rs, ts; tol = 1e-12)
+  for x in 1:nsites(newH)
+    li, ri = inds(Rs[x])
+    if li.space != ri.space
+      return false
+    end
+  end
+  for x in 1:nsites(newH)
+    if norm(tr(newH[x][3, 2])) > tol
+      return false
+    end
+  end
+  for x in 1:nsites(newH)
+    if norm(Rs[x] - denseblocks(δ(inds(Rs[x])...))) > tol
+      return false
+    end
+  end
+  return true
+end
+
+
+function left_canonical(H; tol = 1e-12, max_iter = 50)
+  newH, Rs, ts = block_QR_for_left_canonical(H)
+  if check_convergence_left_canonical(newH, Rs, ts; tol)
+    return newH, Rs, ts
+  end
+  j=1; cont = true
+  while j <= max_iter && cont
+    newH, new_Rs, new_ts = block_QR_for_left_canonical(newH)
+    cont = !check_convergence_left_canonical(newH, new_Rs, new_ts; tol)
+    for j in 1:nsites(newH)
+      ts[j] = ts[j] + Rs[j]*new_ts[j]
+      Rs[j] = new_Rs[j] * Rs[j]
+    end
+    j+=1
+  end
+  if j == max_iter + 1 && !cont
+    println("Warning: reached max iterations before convergence")
+  else
+    println("Left canonicalized in $j iterations")
+  end
+  return newH, Rs, ts
+end
 
 
 
@@ -263,6 +316,8 @@ function matrixITensorToITensor(H::Matrix{ITensor}, com_inds, left_dir, right_di
   #Determine the non-zero blocks, not efficient in memory for now TODO: improve memory use
   temp_block = Block{4}[]
   elements = []
+  dummy_left = ITensor(1, Index(QN() => 1)); dum_left_ind = only(inds(dummy_left))
+  dummy_right = ITensor(1, Index(QN() => 1)); dum_right_ind = only(inds(dummy_right))
   for x in 1:lx
     for y in 1:ly
       isempty(H[x, y]) && continue
@@ -278,7 +333,7 @@ function matrixITensorToITensor(H::Matrix{ITensor}, com_inds, left_dir, right_di
           case = 3 #This is the default case, both legs exists
         else
           !(y == 1 || (x==lx && y ==ly )) && error("Incompatible leg")
-          T = permute(H[x, y], com_inds..., li, allow_alias = true)
+          T = permute(H[x, y]*dummy_right, com_inds..., li, dum_right_ind, allow_alias = true)
           case = 1
         end
       else
@@ -286,14 +341,15 @@ function matrixITensorToITensor(H::Matrix{ITensor}, com_inds, left_dir, right_di
         tri = filter(x->dir(x) == dir(right_basis[1]), commoninds(H[x, y], right_basis))
         if !isempty(tri)
           ri = only(tri)
-          T = permute(H[x, y], com_inds..., ri, allow_alias = true)
+          T = permute(H[x, y]*dummy_left, com_inds..., dum_left_ind, ri, allow_alias = true)
           case = 2
         else
           !(y == 1 || (x==lx && y ==ly )) && error("Incompatible leg")
-          T = permute(H[x, y], com_inds..., allow_alias = true)
+          T = permute(H[x, y]*dummy_left*dummy_right, com_inds..., dum_left_ind, dum_right_ind, allow_alias = true)
         end
       end
       for (n, b) in enumerate(eachnzblock(T))
+        #TODO not completely ok for attribution to 1 and end when stuff is missing
         norm(T[b]) == 0 && continue
         if case == 0
           if x==1
@@ -306,7 +362,7 @@ function matrixITensorToITensor(H::Matrix{ITensor}, com_inds, left_dir, right_di
         elseif case == 1
           append!(temp_block, [Block(b[1], b[2], dic_inv_left_ind[li.id, b[3]], dic_inv_right_ind[right_basis[1].id, 1])])
         elseif case == 2
-          append!(temp_block, [Block(b[1], b[2], dic_inv_left_ind[left_basis[end].id, 1], dic_inv_right_ind[ri.id, b[3]])])
+          append!(temp_block, [Block(b[1], b[2], dic_inv_left_ind[left_basis[end].id, 1], dic_inv_right_ind[ri.id, b[4]])])
         elseif case == 3 #Default case
           append!(temp_block, [Block(b[1], b[2], dic_inv_left_ind[li.id, b[3]], dic_inv_right_ind[ri.id, b[4]])])
         else
@@ -318,8 +374,6 @@ function matrixITensorToITensor(H::Matrix{ITensor}, com_inds, left_dir, right_di
   end
   Hf = ITensors.BlockSparseTensor(eltype(elements[1]), undef,  temp_block, (com_inds..., new_left_index, new_right_index))
   for (n, b) in enumerate(temp_block)
-    println(size(Hf[b]))
-    println(size(elements[n]))
       ITensors.blockview(Hf, b) .= elements[n]
   end
   return itensor(Hf), new_left_index, new_right_index
