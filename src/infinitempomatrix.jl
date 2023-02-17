@@ -102,7 +102,15 @@ end
 #  append!(Rs, [rlast])
 #  return Qs, Rs, -c
 # end
-
+function reversing_δ(ind)
+  bs = [Block(x, x) for x in 1:length(ind.space)]
+  ten = ITensors.BlockSparseTensor(Float64, undef,  bs, (dag(ind), prime(ind)))
+  for x in 1:length(bs)
+    temp = diagm(0=>ones(ind.space[x][2])); temp = temp[end:-1:1, :]
+    ITensors.blockview(ten, bs[x]) .= temp
+  end
+  return itensor(ten)
+end
 
 #nrange(H::InfiniteMPOMatrix) = [size(H[j])[1] - 1 for j in 1:nsites(H)]
 function block_QR_for_left_canonical(H::Matrix{ITensor})
@@ -126,7 +134,7 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
  =#
 
  #We start by orthogonalizing with respect to 1
- # this corresponds to d' = d - tr(d)/tr(1) * 1, R = 1 and t = tr(d)/tr(1) * 1
+ # this corresponds to d' = d - tr(d)/tr(1) * 1, R = 1 and t = tr(d)/tr(1)
  s = commoninds(H[1, 1], H[end, end])
  new_H = copy(H)
  t1 = tr(new_H[3, 2])/tr(H[3, 3])
@@ -183,7 +191,7 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
  return new_H, R, t1
 end
 
-function apply_gauge_on_left(H::Matrix{ITensor}, R::ITensor, t::ITensor)
+function apply_left_gauge_on_left(H::Matrix{ITensor}, R::ITensor, t::ITensor)
   new_H = copy(H)
   new_H[2, 1] = R * H[2, 1]
   new_H[3, 1] = t * H[2, 1] + H[3, 1]
@@ -202,7 +210,7 @@ function block_QR_for_left_canonical(H::InfiniteMPOMatrix)
   ts = ITensor[]
   for j in 1:nsites(H)
     new_H[j], R, t = block_QR_for_left_canonical(new_H[j])
-    new_H[j+1] = apply_gauge_on_left(new_H[j+1], R, t)
+    new_H[j+1] = apply_left_gauge_on_left(new_H[j+1], R, t)
     append!(Rs, [R]); append!(ts, [t])
   end
   return InfiniteMPOMatrix(new_H), CelledVector(Rs, translator(new_H)), CelledVector(ts, translator(new_H))
@@ -228,8 +236,12 @@ function check_convergence_left_canonical(newH, Rs, ts; tol = 1e-12)
   return true
 end
 
-
 function left_canonical(H; tol = 1e-12, max_iter = 50)
+  l1, l2 = size(H[1])
+  if (l1 != 3 || l2 != 3)
+    H = make_block(H)
+  end
+
   newH, Rs, ts = block_QR_for_left_canonical(H)
   if check_convergence_left_canonical(newH, Rs, ts; tol)
     return newH, Rs, ts
@@ -252,15 +264,207 @@ function left_canonical(H; tol = 1e-12, max_iter = 50)
   return newH, Rs, ts
 end
 
+##########################################
+function block_QR_for_right_canonical(H::Matrix{ITensor})
+  #We verify that H is of the form
+  # 1
+  # b  V
+  # c  d  1
+  l1, l2 = size(H)
+  (l1 != 3 || l2 != 3) && error("Format of the InfiniteMPO Matrix incompatible with current implementation")
+  for y in 2:l2
+    for x in 1:y-1
+      !isempty(H[x, y]) && error("Format of the InfiniteMPO Matrix incompatible with current implementation")
+    end
+  end
+
+  #=Following https://journals.aps.org/prb/abstract/10.1103/PhysRevB.102.035147  (but with opposite conventions)
+  we look for
+  1      =   1  0   x  1
+  b  V       t  R      b'  V'
+  where the vectors (V', d') are orthogonal to each other, and to (1, 0)
+ =#
+
+ #We start by orthogonalizing with respect to 1
+ # this corresponds to d' = d - tr(d)/tr(1) * 1, R = 1 and t = tr(d)/tr(1)
+ s = commoninds(H[1, 1], H[end, end])
+ new_H = copy(H)
+ t1 = tr(new_H[2, 1])/tr(H[1, 1])
+ new_H[2, 1] .= new_H[2, 1] .- t1*H[1, 1]
+ #From there, we can do a QR of the joint tensor [d', V]. Because we want to reseparate, we need to take add the virtual index to the left of d'
+ temp_M, left_ind, right_ind = matrixITensorToITensor(new_H[2:2, 1:2], s, ITensors.In, ITensors.Out; rev = false, init_all = false, init_right_first = true)
+ cL = combiner(left_ind, tags = tags(left_ind)); cR = combiner(right_ind, tags = tags(right_ind))
+ cLind = combinedind(cL); cRind = combinedind(cR)
+ #For now, to do the QR, we SVD the overlap matrix.
+ temp_M = cL * temp_M * cR
+ overlap_mat = dag(prime(temp_M, cLind)) * temp_M / tr(H[1, 1])
+ u, lambda, v = svd(overlap_mat, [dag(prime(cLind))], full = false, cutoff = 1e-10, righttags = tags(left_ind))
+ #we now use the orthonormality
+ temp = sqrt.(lambda); temp = 1 ./ temp
+ new_V = temp_M * noprime(u) * temp
+ #println("Before")
+ #println((dag(prime(new_V, commoninds(new_V, v))) * new_V).tensor)
+ #new_right_ind = only(commoninds(new_V, v))
+ R = dag(new_V) * temp_M# / tr(H[3, 3])
+ temp = reversing_δ(only(uniqueinds(R, new_V)))
+ Q, R, new_left_ind = qr(R*temp, commoninds(R, new_V), tags = tags(left_ind), dir = dir(left_ind), positive = true, dilatation = 1)
+ R = R*dag(temp)*dag(cL)/ tr(H[1, 1])
+ temp_left = reversing_δ(new_left_ind)
+ new_V = noprime(dag(cR) * new_V * Q * temp_left, tags=tags(new_left_ind))
+ R = noprime(dag(temp_left)*R, tags=tags(new_left_ind))
+ #println("After")
+ #println((dag(prime(new_V, commoninds(new_V, R))) * new_V).tensor)
+ #println(norm(new_V*R - dag(cL)*temp_M*dag(cR)))
+ #newV, R, qR_ind = qr(cL*temp_M*cR, [s..., cLind], tags = tags(right_ind), dir = dir(right_ind), positive = false, dilatation = 1)
+ #newV, R, qR_ind = qr(tr(cL*temp_M*cR), [cLind], tags = tags(right_ind), dir = dir(right_ind), positive = false, dilatation = 1)
+ #newV = dag(cL)*newV; R = R*dag(cR)
+
+ #Now, we need to split newV into the actual new V and the new d
+ original_right_ind = only(uniqueinds(new_H[2, 2], new_H[2, 1]))
+ T = permute(new_V, s..., new_left_ind, right_ind, allow_alias = true)
+ bs_V = Block{4}[];  bs_for_V = Block{4}[]
+ bs_d = Block{3}[]; bs_for_d = Block{4}[]
+ for (n, b) in enumerate(eachnzblock(T))
+   if b[4] == 1
+     append!(bs_for_d, [b])
+     append!(bs_d, [Block(b[1], b[2], b[3])])
+   else
+     append!(bs_for_V, [b])
+     append!(bs_V, [Block(b[1], b[2], b[3], b[4]-1)])
+   end
+ end
+ final_V = ITensors.BlockSparseTensor(eltype(T), undef,  bs_V, (s..., new_left_ind, original_right_ind))
+ final_d = ITensors.BlockSparseTensor(eltype(T), undef,  bs_d, (s..., new_left_ind))
+ for (n, b) in enumerate(bs_V)
+     ITensors.blockview(final_V, b) .= T[bs_for_V[n]]
+ end
+ for (n, b) in enumerate(bs_d)
+     ITensors.blockview(final_d, b) .= T[bs_for_d[n]]
+ end
+ new_H[2, 1] = itensor(final_d)
+ new_H[2, 2] = itensor(final_V)
+ #TODO decide whether I give R and t or a matrix?
+ return new_H, R, t1
+end
+
+function apply_right_gauge_on_right(H::Matrix{ITensor}, R::ITensor, t::ITensor)
+  new_H = copy(H)
+  new_H[3, 2] = R * H[3, 2]
+  new_H[3, 1] = t * H[3, 2] + H[3, 1]
+  new_H[2, 2] = R * H[2, 2]
+  new_H[2, 1] = t*H[2, 2] + H[2, 1]
+  return new_H
+end
+
+function block_QR_for_right_canonical(H::InfiniteMPOMatrix)
+  #We verify that H is of the form
+  # 1
+  # b  V
+  # c  d  1
+  new_H = copy(H.data)
+  Rs = ITensor[]
+  ts = ITensor[]
+  for j in reverse(1:nsites(H))
+    new_H[j], R, t = block_QR_for_right_canonical(new_H[j])
+    new_H[j-1] = apply_right_gauge_on_right(new_H[j-1], R, t)
+    append!(Rs, [R]); append!(ts, [t])
+  end
+  return InfiniteMPOMatrix(new_H), CelledVector(reverse(Rs), translator(new_H)), CelledVector(reverse(ts), translator(new_H))
+end
+
+function check_convergence_right_canonical(newH, Rs, ts; tol = 1e-12)
+  for x in 1:nsites(newH)
+    li, ri = inds(Rs[x])
+    if li.space != ri.space
+      return false
+    end
+  end
+  for x in 1:nsites(newH)
+    if norm(tr(newH[x][2, 1])) > tol
+      return false
+    end
+  end
+  for x in 1:nsites(newH)
+    if norm(Rs[x] - denseblocks(δ(inds(Rs[x])...))) > tol
+      return false
+    end
+  end
+  return true
+end
+
+function right_canonical(H; tol = 1e-12, max_iter = 50)
+  l1, l2 = size(H[1])
+  if (l1 != 3 || l2 != 3)
+    H = make_block(H)
+  end
+
+  newH, Rs, ts = block_QR_for_right_canonical(H)
+  if check_convergence_right_canonical(newH, Rs, ts; tol)
+    println("Right canonicalized in 1 iterations")
+    return newH, Rs, ts
+  end
+  j=1; cont = true
+  while j <= max_iter && cont
+    newH, new_Rs, new_ts = block_QR_for_right_canonical(newH)
+    cont = !check_convergence_right_canonical(newH, new_Rs, new_ts; tol)
+    for j in 1:nsites(newH)
+      ts[j] = ts[j] + Rs[j]*new_ts[j]
+      Rs[j] = new_Rs[j] * Rs[j]
+    end
+    j+=1
+  end
+  if j == max_iter + 1 && cont
+    println("Warning: reached max iterations before convergence")
+  else
+    println("Right canonicalized in $j iterations")
+  end
+  return newH, Rs, ts
+end
+
+function compress_impo(H::InfiniteMPOMatrix; kwargs...)
+  smallH = make_block(H)
+  HR, = right_canonical(smallH)
+  HL, Rs, Ts = left_canonical(HR)
+  #At this point, we have HL[1]*Rs[1] = Rs[0] * HR[1] etc
+  if maximum(norm.(Ts)) > 1e-12
+    println(maximum(norm.(Ts)))
+    error("Ts should be 0 at this point")
+  end
+  Us = Vector{ITensor}(undef, nsites(H));
+  Ss = Vector{ITensor}(undef, nsites(H));
+  Vsd = Vector{ITensor}(undef, nsites(H));
+  for x in 1:nsites(H)
+    Us[x], Ss[x], Vsd[x] = svd(Rs[x], commoninds(Rs[x], HL[x][2, 2]); lefttags = tags(only(commoninds(Rs[x], HL[x][2, 2]))), righttags = tags(only(commoninds(Rs[x], HR[x+1][2, 2]))), kwargs...)
+  end
+  Us = CelledVector(Us, translator(H)); Vsd = CelledVector(Vsd, translator(H)); Ss= CelledVector(Ss, translator(H));
+  newHL = copy(HL.data)
+  newHR = copy(HR.data)
+  for x in 1:nsites(H)
+    ## optimizing the left canonical
+    newHL[x][2, 1] = dag(Us[x-1]) * newHL[x][2, 1]
+    newHL[x][3, 2] = newHL[x][3, 2] * Us[x]
+    newHL[x][2, 2] = dag(Us[x-1]) * newHL[x][2, 2] * Us[x]
+    ## optimizing the right canonical
+    newHR[x][2, 1] = Vsd[x-1] * newHR[x][2, 1]
+    newHR[x][3, 2] = newHR[x][3, 2] * dag(Vsd[x])
+    newHR[x][2, 2] = Vsd[x-1] * newHR[x][2, 2] * dag(Vsd[x])
+  end
+  return InfiniteMPOMatrix(newHL), InfiniteMPOMatrix(newHR)
+end
 
 
-function matrixITensorToITensor(H::Matrix{ITensor}, com_inds, left_dir, right_dir; rev = false, kwargs...)
-  rev && error("not yet implemented")
+
+function matrixITensorToITensor(H::Matrix{ITensor}, com_inds, left_dir, right_dir; kwargs...)
   init_all = get(kwargs, :init_all, true)
   init_left_first = get(kwargs, :init_left_first, init_all)
   init_right_first = get(kwargs, :init_right_first, init_all)
   init_left_last = get(kwargs, :init_left_last, init_all)
   init_right_last = get(kwargs, :init_right_last, init_all)
+  #TODO: fix the rev
+  rev_all = get(kwargs, :rev_all, false)
+  rev_left = get(kwargs, :rev_left, rev_all)
+  rev_right = get(kwargs, :rev_right, rev_all)
+  #TODO some fixing when rev and init are mixed up
 
   lx, ly = size(H)
   #Generate in order the leftbasis
