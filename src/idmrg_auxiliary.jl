@@ -107,10 +107,10 @@ function LinearAlgebra.qr(T::ITensors.NDTensors.BlockSparseMatrix{ElT}; kwargs..
         indsR =  [dag(centerind), inds(T)[2]]
 
         Q = ITensors.BlockSparseTensor(ElT, undef,  [Block(b[1], seen[b[2]]) for (n, b) in enumerate(eachnzblock(T))], indsQ)
-        R = ITensors.BlockSparseTensor(ElT, undef, [Block(seen[b[2]], seen[b[2]]) for (n, b) in enumerate(eachnzblock(T))], indsR);
+        R = ITensors.BlockSparseTensor(ElT, undef, [Block(seen[b[2]], b[2]) for (n, b) in enumerate(eachnzblock(T))], indsR);
         for (n, b) in enumerate(eachnzblock(T))
             qb = Block(b[1], seen[b[2]])
-            rb = Block(seen[b[2]], seen[b[2]])
+            rb = Block(seen[b[2]], b[2])
             ITensors.blockview(Q, qb) .= Qs[n]
             ITensors.blockview(R, rb) .= Rs[n]
         end

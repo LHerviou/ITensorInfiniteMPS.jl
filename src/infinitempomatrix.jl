@@ -146,7 +146,7 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
  #For now, to do the QR, we SVD the overlap matrix.
  temp_M = cL * temp_M * cR
  overlap_mat = dag(prime(temp_M, cRind)) * temp_M / tr(H[3, 3])
- u, lambda, v = svd(overlap_mat, [dag(prime(cRind))], full = false, cutoff = 1e-10, righttags = tags(right_ind))
+ u, lambda, v = svd(overlap_mat, [dag(prime(cRind))], full = false, cutoff = 1e-12, righttags = tags(right_ind))
  #we now use the orthonormality
  temp = sqrt.(lambda); temp = 1 ./ temp
  new_V = temp_M * noprime(u) * temp
@@ -154,7 +154,7 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
  #println((dag(prime(new_V, commoninds(new_V, v))) * new_V).tensor)
  #new_right_ind = only(commoninds(new_V, v))
  R = dag(new_V) * temp_M# / tr(H[3, 3])
- Q, R, new_right_ind = qr(R, commoninds(R, new_V), tags = tags(right_ind), dir = dir(right_ind), positive = true, dilatation = 1)
+ Q, R, new_right_ind = qr(R, commoninds(R, new_V), tags = tags(right_ind), dir = dir(right_ind), positive = true, dilatation = 1, full = true)
  R = R*dag(cR)/ tr(H[3, 3])
  new_V = dag(cL) * new_V * Q
  #println("After")
@@ -298,7 +298,7 @@ function block_QR_for_right_canonical(H::Matrix{ITensor})
  #For now, to do the QR, we SVD the overlap matrix.
  temp_M = cL * temp_M * cR
  overlap_mat = dag(prime(temp_M, cLind)) * temp_M / tr(H[1, 1])
- u, lambda, v = svd(overlap_mat, [dag(prime(cLind))], full = false, cutoff = 1e-10, righttags = tags(left_ind))
+ u, lambda, v = svd(overlap_mat, [dag(prime(cLind))], full = false, cutoff = 1e-12, righttags = tags(left_ind))
  #we now use the orthonormality
  temp = sqrt.(lambda); temp = 1 ./ temp
  new_V = temp_M * noprime(u) * temp
@@ -307,9 +307,9 @@ function block_QR_for_right_canonical(H::Matrix{ITensor})
  #new_right_ind = only(commoninds(new_V, v))
  R = dag(new_V) * temp_M# / tr(H[3, 3])
  temp = reversing_δ(only(uniqueinds(R, new_V)))
- Q, R, new_left_ind = qr(R*temp, commoninds(R, new_V), tags = tags(left_ind), dir = dir(left_ind), positive = true, dilatation = 1)
+ Q, R, new_left_ind = qr(R*temp, commoninds(R, new_V), tags = tags(left_ind), dir = dir(left_ind), positive = true, dilatation = 1, full = true)
  R = R*dag(temp)*dag(cL)/ tr(H[1, 1])
- temp_left = reversing_δ(new_left_ind)
+ temp_left = reversing_δ(new_left_ind) #Is this necessary?
  new_V = noprime(dag(cR) * new_V * Q * temp_left, tags=tags(new_left_ind))
  R = noprime(dag(temp_left)*R, tags=tags(new_left_ind))
  #println("After")
@@ -423,7 +423,8 @@ end
 
 function compress_impo(H::InfiniteMPOMatrix; kwargs...)
   smallH = make_block(H)
-  HR, = right_canonical(smallH)
+  HL, = left_canonical(smallH)
+  HR, = right_canonical(HL)
   HL, Rs, Ts = left_canonical(HR)
   #At this point, we have HL[1]*Rs[1] = Rs[0] * HR[1] etc
   if maximum(norm.(Ts)) > 1e-12
@@ -435,6 +436,8 @@ function compress_impo(H::InfiniteMPOMatrix; kwargs...)
   Vsd = Vector{ITensor}(undef, nsites(H));
   for x in 1:nsites(H)
     Us[x], Ss[x], Vsd[x] = svd(Rs[x], commoninds(Rs[x], HL[x][2, 2]); lefttags = tags(only(commoninds(Rs[x], HL[x][2, 2]))), righttags = tags(only(commoninds(Rs[x], HR[x+1][2, 2]))), kwargs...)
+    println(minimum(diag(Ss[x])))
+    println(sum(diag(Ss[x]).^2))
   end
   Us = CelledVector(Us, translator(H)); Vsd = CelledVector(Vsd, translator(H)); Ss= CelledVector(Ss, translator(H));
   newHL = copy(HL.data)
