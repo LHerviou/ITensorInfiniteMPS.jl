@@ -129,17 +129,15 @@ end
 
 function diag_ortho_polar(AC, C)
   UAC, _ = polar(AC, uniqueinds(AC, C))
-  return noprime(UAC) * dag(δ(inds(C)...)  )
+  return noprime(UAC) * dag(δ(inds(C)...))
 end
-
 
 function diag_ortho_polar_both(AC, C)
   UAC, Cbis = polar(AC, uniqueinds(AC, C))
   new_ind = flip_sign(only(commoninds(Cbis, UAC)))
-  return noprime(UAC * wδ(only(commoninds(Cbis, UAC)), new_ind)) , noprime(Cbis * wδ(only(commoninds(UAC, Cbis)), dag(new_ind) ))
+  return noprime(UAC * wδ(only(commoninds(Cbis, UAC)), new_ind)),
+  noprime(Cbis * wδ(only(commoninds(UAC, Cbis)), dag(new_ind)))
 end
-
-
 
 function flip_sign(ind::Index{Vector{Pair{QN,Int64}}})
   space = copy(ind.space)
@@ -172,7 +170,7 @@ function wδ(indl, indr)
   for spl in indl.space
     start_right = 1
     for (idxr, spr) in enumerate(indr.space)
-      if spl[1]*indl.dir == -spr[1]*indr.dir && visited[idxr] == 0
+      if spl[1] * indl.dir == -spr[1] * indr.dir && visited[idxr] == 0
         for x in 0:min(spl[2] - 1, spr[2] - 1)
           res[shift_left + x, start_right + x] = 1.0
         end
