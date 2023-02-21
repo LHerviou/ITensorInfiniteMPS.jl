@@ -319,6 +319,7 @@ function idmrg_step(
     err = 1 - norm(S2)
     S2 = S2 / norm(S2)
     iDM.ψ.AL[start] = U2
+    #TODO simplify
     temp_R, temp_C = diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start - 1])
     if count == 1 #&& nbIterations > 1
       adjust_right_most = translatecell(
@@ -340,7 +341,7 @@ function idmrg_step(
     )
     iDM.ψ.AR[start] = temp_R
     iDM.ψ.C[start - 1] = temp_C
-    iDM.ψ.C[start] = S2
+    iDM.ψ.C[start] = S2 #TODO denseblocks(S2) -> should work the same, but simplify the code
     for j in 2:(nb_site - 1)
       new_x = S2 * V2
       linktags = tags(only(commoninds(iDM.ψ.AL[start + j - 1], iDM.ψ.AL[start + j])))

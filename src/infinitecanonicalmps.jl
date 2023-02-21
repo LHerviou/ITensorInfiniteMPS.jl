@@ -257,16 +257,18 @@ function ITensors.truncate!(psi::InfiniteCanonicalMPS; kwargs...)
 
   s = siteinds(only, psi.AL)
   for j in first(site_range):last(site_range)-1
-    left_indices = [ commoninds(only, psi.AL[j], psi.AL[j-1]), s[j] ]
-    U, S, V = svd(psi.AL[j]*psi.C[j]*psi.AR[j+1], left_indices, righttags=tags(left_indices[1]), lefttags=tags(left_indices[1]))
+    left_indices = [ only(filter(x->dir(x) == ITensors.Out, commoninds(psi.AL[j], psi.AL[j-1]))), s[j] ]
+    new_tag = tags(only(commoninds(psi.AL[j], psi.C[j])))
+    U, S, V = svd(psi.AL[j]*psi.C[j]*psi.AR[j+1], left_indices, lefttags=new_tag, righttags = new_tag; kwargs...)
     psi.AL[j] = U
     psi.AR[j+1] = V
-    psi.C = denseblocks(itensor(S))
-    temp_R, temp_C = polar(U * S, iDM.ψ.C[start - 1])
+    psi.C[j] = denseblocks(itensor(S))
+    #TODO this choice preserve the AL C = C AR on the untouched bonds, but not on the middle. Is it really the best choice?
+    # Currently, in the iDMRG, I also update the Cleft (the Cright is updated next)
+    # Note that it in principle does not really matter when doing the iDMRG
+    temp_R = ortho_polar(U * S, psi.C[j - 1])
     psi.AR[j] = temp_R
-    psi.C[j-1] = temp_C
-    temp_L, temp_C = polar(S * V, iDM.ψ.C[start + 1])
+    temp_L = ortho_polar(S * V, psi.C[j + 1])
     psi.AL[j+1] = temp_L
-    psi.C[j+1] = temp_C
   end
 end
