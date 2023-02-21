@@ -22,17 +22,6 @@ struct temporaryHamiltonian{Tmpo,Tenv}
   nref::Int64 #leftmostsite
 end
 
-# struct theta
-#   xs::Vector{ITensor}
-#   nref::Int64 #leftmostsite
-# end
-#
-# function theta(iDM::iDMRGStructure, start::Int64)
-#   nb_site = dmrg_sites(iDM)
-#   xs = [iDM.ψ.AL[start] * iDM.ψ.C[start]]
-#   xs = vcat(xs, [iDM.ψ.AR[start+j-1] for j in 2:nb_site])
-#   return theta(xs, start)
-# end
 
 function iDMRGStructure(ψ::InfiniteCanonicalMPS, Hmpo::InfiniteMPOMatrix, dmrg_sites::Int64)
   N = nsites(ψ) #dmrg_sites
@@ -273,7 +262,7 @@ function idmrg_step(
   end
   if nb_site == 1
     #return idmrg_step_single_site(iDM; solver_tol, cutoff)
-    error("Not fully implemented")
+    error("Single site idmrg not implemented")
   end
   if (N ÷ (nb_site ÷ 2)) * (nb_site ÷ 2) != N
     error("We require that the (nb_site÷2) divides the unitcell length")
@@ -319,29 +308,8 @@ function idmrg_step(
     err = 1 - norm(S2)
     S2 = S2 / norm(S2)
     iDM.ψ.AL[start] = U2
-    #TODO simplify
-    temp_R, temp_C = diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start - 1])
-    if count == 1 #&& nbIterations > 1
-      adjust_right_most = translatecell(
-        translator(iDM),
-        wδ(
-          only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start - 1])),
-          only(commoninds(temp_C, temp_R)),
-        ),
-        1,
-      )
-      for j in 1:length(iDM.R)
-        effective_Rs[end][j] *= dag(adjust_right_most) #Also modify iDM.R
-        effective_Rs[end][j] *= prime(adjust_right_most)
-      end
-    end
-    iDM.ψ.AR[start - 1] *= wδ(
-      only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start - 1])),
-      only(commoninds(temp_C, temp_R)),
-    )
-    iDM.ψ.AR[start] = temp_R
-    iDM.ψ.C[start - 1] = temp_C
-    iDM.ψ.C[start] = S2 #TODO denseblocks(S2) -> should work the same, but simplify the code
+    iDM.ψ.C[start] = denseblocks(S2)
+    iDM.ψ.AR[start] = ortho_polar(U2 * S2, iDM.ψ.C[start - 1])
     for j in 2:(nb_site - 1)
       new_x = S2 * V2
       linktags = tags(only(commoninds(iDM.ψ.AL[start + j - 1], iDM.ψ.AL[start + j])))
@@ -359,121 +327,25 @@ function idmrg_step(
       err += 1 - norm(S2)
       S2 = S2 / norm(S2)
       iDM.ψ.AL[start + j - 1] = U2
-      temp_R, temp_C = diag_ortho_polar_both(U2 * S2, iDM.ψ.C[start + j - 2])
-      iDM.ψ.AR[start + j - 2] *= wδ(
-        dag(
-          only(
-            uniqueinds(
-              iDM.ψ.AR[start + j - 2], iDM.ψ.AL[start + j - 2], iDM.ψ.AR[start + j - 3]
-            ),
-          ),
-        ),
-        only(commoninds(temp_C, temp_R)),
-      )
-      iDM.ψ.AR[start + j - 1] = temp_R
-      iDM.ψ.C[start + j - 2] = temp_C
-      iDM.ψ.C[start + j - 1] = S2
+      iDM.ψ.C[start + j - 1] = denseblocks(S2)
+      iDM.ψ.AR[start + j - 1] = ortho_polar(U2 * S2, iDM.ψ.C[start + j - 2])
     end
-    if count != nbIterations
-      iDM.ψ.AR[start + nb_site - 1] = V2
-      temp_R, temp_C = diag_ortho_polar_both(
-        S2 * iDM.ψ.AR[start + nb_site - 1], iDM.ψ.C[start + nb_site - 1]
-      )
-      iDM.ψ.AL[start + nb_site - 1] = temp_R
-      iDM.ψ.C[start + nb_site - 1] = temp_C
-      adjust_left = wδ(
-        only(commoninds(temp_C, temp_R)),
-        dag(
-          only(
-            uniqueinds(
-              iDM.ψ.AL[start + nb_site],
-              iDM.ψ.AL[start + nb_site + 1],
-              iDM.ψ.AR[start + nb_site],
-            ),
-          ),
-        ),
-      )
-      iDM.ψ.AL[start + nb_site] *= adjust_left
-    else
-      if nb_site == N
-        adjust_right = wδ(
-          dag(only(uniqueinds(V2, S2, iDM.ψ.AR[start + nb_site - 1]))),
-          dag(
-            only(
-              uniqueinds(
-                iDM.ψ.AR[start + nb_site],
-                iDM.ψ.AL[start + nb_site],
-                iDM.ψ.C[start + nb_site],
-              ),
-            ),
-          ),
-        )
-        iDM.ψ.AR[start + nb_site - 1] = V2 #*  adjust_right
-        iDM.ψ.AR[start + nb_site - 1] *= adjust_right
-      else
-        iDM.ψ.AR[start + nb_site - 1] = V2 #*  adjust_right
-      end
-      temp = wδ(
-        only(
-          uniqueinds(
-            iDM.ψ.AR[start + nb_site], iDM.ψ.AL[start + nb_site], iDM.ψ.C[start + nb_site]
-          ),
-        ),
-        only(commoninds(iDM.ψ.C[start + nb_site], iDM.ψ.AL[start + nb_site])),
-      )
-      temp_R, temp_C = diag_ortho_polar_both(S2 * iDM.ψ.AR[start + nb_site - 1], temp)
-      iDM.ψ.AL[start + nb_site - 1] = temp_R
-      iDM.ψ.C[start + nb_site - 1] = temp_C
-      adjust_left = wδ(
-        only(commoninds(temp_C, temp_R)),
-        dag(
-          only(
-            uniqueinds(
-              iDM.ψ.AL[start + nb_site],
-              iDM.ψ.AL[start + nb_site + 1],
-              iDM.ψ.AR[start + nb_site],
-            ),
-          ),
-        ),
-      )
-      iDM.ψ.AL[start + nb_site] *= adjust_left
-    end
-
+    iDM.ψ.AR[start+nb_site - 1] = V2
+    iDM.ψ.AL[start+nb_site - 1] = ortho_polar(S2*V2, iDM.ψ.C[start + nb_site - 1])
+    #Advance the left environment as long as we are not finished
     if count != nbIterations
       for j in 1:(nb_site ÷ 2)
-        if j == 1 && nbIterations == 1
-          apply_mpomatrix_left!(
-            current_L,
-            iDM.Hmpo[start + j - 1],
-            translatecell(translator(iDM), dag(adjust_left), -1) * iDM.ψ.AL[start + j - 1],
-          )
-        else
-          apply_mpomatrix_left!(current_L, iDM.Hmpo[start + j - 1], iDM.ψ.AL[start + j - 1])
-        end
-        #iDM.L[1] -= local_ener[1]/N * denseblocks(δ(inds(iDM.L[1])...))
+        apply_mpomatrix_left!(current_L, iDM.Hmpo[start + j - 1], iDM.ψ.AL[start + j - 1])
       end
       start += nb_site ÷ 2
     end
   end
+  #By convention, we choose to advance half the unit cell
   for j in 1:(N ÷ 2)
-    if j == 1
-      apply_mpomatrix_left!(
-        iDM.L,
-        iDM.Hmpo[original_start + j - 1],
-        translatecell(translator(iDM), dag(adjust_left), -1) *
-        iDM.ψ.AL[original_start + j - 1],
-      )
-    else
-      apply_mpomatrix_left!(
-        iDM.L, iDM.Hmpo[original_start + j - 1], iDM.ψ.AL[original_start + j - 1]
-      )
-    end
+    apply_mpomatrix_left!(iDM.L, iDM.Hmpo[original_start + j - 1], iDM.ψ.AL[original_start + j - 1])
     iDM.L[1] -= local_ener[1] / N * denseblocks(δ(inds(iDM.L[1])...))
   end
   for j in reverse((N ÷ 2 + 1):N)#reverse((N-nb_site + nb_site÷2 + 1):N)
-    if j == N && length(commoninds(iDM.R[1], iDM.ψ.AR[original_start + j - 1])) == 0
-      error("Should never appear")
-    end
     apply_mpomatrix_right!(
       iDM.R, iDM.Hmpo[original_start + j - 1], iDM.ψ.AR[original_start + j - 1]
     )

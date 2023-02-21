@@ -185,9 +185,6 @@ function wδ(indl, indr)
   return res
 end
 
-
-
-
 function ITensors.truncate!(psi::InfiniteCanonicalMPS; kwargs...)
   n = nsites(psi)
   site_range=get(kwargs, :site_range, 1:n+1)

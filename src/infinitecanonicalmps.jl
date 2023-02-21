@@ -249,26 +249,3 @@ function entropies(psi::InfiniteCanonicalMPS)
   end
   return entropies
 end
-
-
-function ITensors.truncate!(psi::InfiniteCanonicalMPS; kwargs...)
-  n = nsites(psi)
-  site_range=get(kwargs, :site_range, 1:n+1)
-
-  s = siteinds(only, psi.AL)
-  for j in first(site_range):last(site_range)-1
-    left_indices = [ only(filter(x->dir(x) == ITensors.Out, commoninds(psi.AL[j], psi.AL[j-1]))), s[j] ]
-    new_tag = tags(only(commoninds(psi.AL[j], psi.C[j])))
-    U, S, V = svd(psi.AL[j]*psi.C[j]*psi.AR[j+1], left_indices, lefttags=new_tag, righttags = new_tag; kwargs...)
-    psi.AL[j] = U
-    psi.AR[j+1] = V
-    psi.C[j] = denseblocks(itensor(S))
-    #TODO this choice preserve the AL C = C AR on the untouched bonds, but not on the middle. Is it really the best choice?
-    # Currently, in the iDMRG, I also update the Cleft (the Cright is updated next)
-    # Note that it in principle does not really matter when doing the iDMRG
-    temp_R = ortho_polar(U * S, psi.C[j - 1])
-    psi.AR[j] = temp_R
-    temp_L = ortho_polar(S * V, psi.C[j + 1])
-    psi.AL[j+1] = temp_L
-  end
-end
