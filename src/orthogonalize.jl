@@ -121,10 +121,19 @@ function ortho_overlap(AC, C)
   return noprime(AL)
 end
 
-function ortho_polar(AC, C)
+function ortho_polar(AC, C::ITensor)
   UAC, _ = polar(AC, uniqueinds(AC, C))
   UC, _ = polar(C, commoninds(C, AC))
   return noprime(UAC) * noprime(dag(UC))
+end
+
+function ortho_polar(AC, C::Index; targetdir = ITensors.Out)
+  UAC, _ = polar(AC, uniqueinds(AC, C))
+  new_index = only(uniqueinds(UAC, uniqueinds(AC, C)))
+  if dir(new_index) != targetdir
+    UAC = UAC  * wδ(dag(new_index), prime(flip_sign(dag(new_index))))
+  end
+  return noprime(UAC)
 end
 
 function diag_ortho_polar(AC, C)

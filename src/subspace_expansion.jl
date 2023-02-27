@@ -115,12 +115,16 @@ function generate_twobody_nullspace(
   return ψH2
 end
 
+#Technically not exactly the nullspace subspace expansion for more than two states
 function generate_twobody_nullspace(
   ψ::InfiniteCanonicalMPS, H::InfiniteMPOMatrix, b::Tuple{Int,Int}; atol=1e-2
 )
   n_1, n_2 = b
+  nbsite = n_2 - n_1
+  pivot_site = n_1 + div(nbsite, 2)
   L, _ = left_environment(H, ψ)
   R, _ = right_environment(H, ψ)
+
 
   dₕ = length(L[n_1 - 1])
   temp_L = similar(L[n_1 - 1])
@@ -138,19 +142,54 @@ function generate_twobody_nullspace(
       end
     end
   end
-  temp_R = similar(R[n_1 + 2])
+  for x in (n_1 + 1):pivot_site
+    new_temp_L = similar(temp_L)
+    for i in 1:dₕ
+      non_empty_idx = dₕ
+      while isempty(H[x][non_empty_idx, i]) && non_empty_idx >= i
+        non_empty_idx -= 1
+      end
+      @assert non_empty_idx != i - 1 "Empty MPO"
+      new_temp_L[i] =
+        temp_L[non_empty_idx] * ψ.AR[x]  * H[x][non_empty_idx, i]
+      for j in reverse(i:(non_empty_idx - 1))
+        if !isempty(H[x][j, i])
+          new_temp_L[i] += temp_L[j] * ψ.AR[x] * H[x][j, i]
+        end
+      end
+    end
+    temp_L = new_temp_L
+  end
+  temp_R = similar(R[n_2 + 1])
   for i in 1:dₕ
     non_empty_idx = 1
-    while isempty(H[n_1 + 1][i, non_empty_idx]) && non_empty_idx <= i
+    while isempty(H[n_2][i, non_empty_idx]) && non_empty_idx <= i
       non_empty_idx += 1
     end
     @assert non_empty_idx != i + 1 "Empty MPO"
-    temp_R[i] = H[n_1 + 1][i, non_empty_idx] * (ψ.AR[n_1 + 1] * R[n_1 + 2][non_empty_idx])
+    temp_R[i] = H[n_2][i, non_empty_idx] * (ψ.AR[n_2] * R[n_2 + 1][non_empty_idx])
     for j in (non_empty_idx + 1):i
-      if !isempty(H[n_1 + 1][i, j])
-        temp_R[i] += H[n_1 + 1][i, j] * (ψ.AR[n_1 + 1] * R[n_1 + 2][j])
+      if !isempty(H[n_2][i, j])
+        temp_R[i] += H[n_2][i, j] * (ψ.AR[n_2] * R[n_2+1][j])
       end
     end
+  end
+  for x in reverse(pivot_site+1:n_2-1)
+    new_temp_R = similar(temp_R)
+    for i in 1:dₕ
+      non_empty_idx = 1
+      while isempty(H[x][i, non_empty_idx]) && non_empty_idx <= i
+        non_empty_idx += 1
+      end
+      @assert non_empty_idx != i + 1 "Empty MPO"
+      new_temp_R[i] = H[x][i, non_empty_idx] * (ψ.AR[x] * temp_R[non_empty_idx])
+      for j in (non_empty_idx + 1):i
+        if !isempty(H[x][i, j])
+          new_temp_R[i] += H[x][i, j] * (ψ.AR[x] * temp_R[j])
+        end
+      end
+    end
+    temp_R = new_temp_R
   end
   ψH2 = temp_L[1] * temp_R[1]
   for j in 2:dₕ
@@ -158,15 +197,286 @@ function generate_twobody_nullspace(
   end
   return noprime(ψH2)
 end
+
+
 # atol controls the tolerance cutoff for determining which eigenvectors are in the null
 # space of the isometric MPS tensors. Setting to 1e-2 since we only want to keep
 # the eigenvectors corresponding to eigenvalues of approximately 1.
+# function subspace_expansion(
+#   ψ::InfiniteCanonicalMPS, H, b::Tuple{Int,Int}; maxdim, cutoff, atol=1e-2, kwargs...
+# )
+#   n1, n2 = b
+#   nbsite = n2 - n1
+#   if nbsite > nsites(ψ) + 1
+#     println("Subspace expansion not implement for if the range of the expansion is larger than nsites + 1")
+#     flush(stdout)
+#     flush(stderr)
+#     return (ψ.AL[n1:n2]...), ψ.C[n1:n2-1]..., (ψ.AR[n1:n2...])
+#   end
+#   pivot_site = n1 + div(nbsite, 2)
+#   lⁿ¹ = commoninds(ψ.AL[pivot_site], ψ.C[pivot_site])
+#   rⁿ¹ = commoninds(ψ.AR[pivot_site+1], ψ.C[pivot_site])
+#   l = linkinds(only, ψ.AL)
+#   r = linkinds(only, ψ.AR)
+#   s = siteinds(only, ψ)
+#   δʳ(n) = δ(dag(r[n]), prime(r[n]))
+#   δˢ(n) = δ(dag(s[n]), prime(s[n]))
+#   δˡ(n) = δ(l[n], dag(prime(l[n])))
+#
+#   dˡ = dim(lⁿ¹)
+#   dʳ = dim(rⁿ¹)
+#   @assert dˡ == dʳ
+#   if dˡ ≥ maxdim
+#     println(
+#       "Current bond dimension at bond $b is $dˡ while desired maximum dimension is $maxdim, skipping bond dimension increase",
+#     )
+#     flush(stdout)
+#     flush(stderr)
+#     return (ψ.AL[n1:n2], ψ.C[n1:n2-1], ψ.AR[n1:n2])
+#   end
+#   maxdim -= dˡ
+#
+#   temp_left = ψ.AL[n1]
+#   for j in n1+1:pivot_site
+#     temp_left *= ψ.AL[j]
+#   end
+#   NL = nullspace(temp_left, lⁿ¹; atol=atol, tags = "leftnullspace")
+#   temp_right = ψ.AR[n2]
+#   for j in n2-1:-1:pivot_site+1
+#     temp_right *= ψ.AR[j]
+#   end
+#   NR = nullspace(temp_right, rⁿ¹; atol=atol, tags = "rightnullspace")
+#   nL = only(filterinds(NL, tags =  "leftnullspace"))
+#   nR = only(filterinds(NR, tags =  "rightnullspace"))
+#
+#   ψHN2 = generate_twobody_nullspace(ψ, H, b; atol=atol)  * NL * NR
+#   #Added due to crash during testing
+#   if norm(ψHN2.tensor) < 1e-12
+#     println(
+#       "Impossible to do a subspace expansion, probably due to conservation constraints"
+#     )
+#     flush(stdout)
+#     flush(stderr)
+#     return (ψ.AL[n1:n2], ψ.C[n1:n2-1], ψ.AR[n1:n2])
+#   end
+#
+#   U, S, V = svd(ψHN2, nL; maxdim=maxdim, cutoff=cutoff, lefttags = "Right", righttags = "Left", kwargs...)
+#   if dim(S) == 0 #Crash before reaching this point
+#     return (ψ.AL[n1:n2], ψ.C[n1:n2-1], ψ.AR[n1:n2])
+#   end
+#   #@show S[end, end]
+#   U *= dag(NL); V *= dag(NR)
+#   #At this point, U decribes all sites to the left of pivot_site (including it), and V to the right
+#
+#   #Us = Vector{ITensor}(undef, n2-n1); Us[1] = U
+#   Ss = Dict{Int64, ITensor}(); Ss[pivot_site] = S
+#   ALs = Vector{ITensor}(undef, n2-n1+1)
+#   ARs = Vector{ITensor}(undef, n2-n1+1)
+#
+#   for j in reverse(n1:pivot_site-1)
+#     U, Ss[j], new_V = svd(U*Ss[j+1], uniqueinds(U, Ss[j+1], s[j+1]); maxdim=maxdim, cutoff=cutoff, lefttags = "Right", righttags = "Left", kwargs...)
+#     #Needs ordering indices
+#     or = uniqueinds(ψ.AR[j+1], new_V)
+#     new = uniqueinds(new_V, ψ.AR[j+1])
+#     if dir(or[1]) != ITensors.In
+#       or = reverse(or)
+#     end
+#     if dir(or[1]) != dir(new[1])
+#       new = reverse(new)
+#     end
+#     ARs[j-n1+2],  = ITensors.directsum(
+#             ψ.AR[j+1] => or,
+#             new_V => new;
+#             tags=("Left", "Right",),
+#           )
+#   end
+#   ALs[1], newl = ITensors.directsum(
+#       ψ.AL[n1] => uniqueinds(ψ.AL[n1], NL),
+#       U => uniqueinds(U, ψ.AL[n1]);
+#       tags=("Right",),
+#     )
+#
+#   for j in pivot_site+1:n2-1
+#     new_U, Ss[j], V = svd(Ss[j-1]*V, (only(uniqueinds(Ss[j-1], V)), s[j]); maxdim=maxdim, cutoff=cutoff, lefttags = "Right", righttags = "Left", kwargs...)
+#     #Needs ordering indices
+#     or = uniqueinds(ψ.AL[j], new_U)
+#     new = uniqueinds(new_U, ψ.AL[j])
+#       if dir(or[1]) != ITensors.Out
+#         or = reverse(or)
+#       end
+#       if dir(or[1]) != dir(new[1])
+#         new = reverse(new)
+#       end
+#       ALs[j-n1+1], newr  = ITensors.directsum(
+#               ψ.AL[j] => or,
+#               new_U => new;
+#               tags=("Left", "Right",),
+#             )
+#     end
+#   ARs[n2-n1+1], = ITensors.directsum(
+#     ψ.AR[n2] => uniqueinds(ψ.AR[n2], V),
+#     V => uniqueinds(V, ψ.AR[n2]);
+#     tags=("Left",),
+#   )
+#   #lets adjust indices
+#
+#   Cs = Vector{ITensor}(undef, n2-n1)
+#   #Start from the left
+#   for x in n1:pivot_site-1
+#     newl = filterinds(ALs[x-n1+1], tags = "Right")
+#     newr = filterinds(ARs[x-n1+2], tags = "Left")
+#     Cs[x-n1+1] = ITensor(dag(newl)..., dag(newr)...)
+#     ψCⁿ¹ = permute(ψ.C[x], commoninds(ψ.C[x], ψ.AL[x])..., uniqueinds(ψ.C[x], ψ.AL[x])...)
+#     for I in eachindex(ψCⁿ¹)
+#       v = ψCⁿ¹[I]
+#       if !iszero(v)
+#         Cs[x-n1+1][I] = ψCⁿ¹[I] #Is it still this one for n site?
+#       end
+#     end
+#     #update_tags of Cs:
+#     nl = combiner(newl, tags=tags(only(commoninds(ψ.AL[x], ψ.C[x]))))
+#     ALs[x-n1+1] *= nl
+#     Cs[x-n1+1] *= dag(nl)
+#     #
+#     nr = combiner(newr, tags=tags(only(commoninds(ψ.AR[x+1], ψ.C[x]))))
+#     ARs[x-n1+2] *= nr
+#     Cs[x-n1+1] *= dag(nr)
+#     #Now that we have C, we can compute the new ALs[x+1]
+#     ALs[x-n1+2] = ortho_polar(Cs[x-n1+1]*ARs[x-n1+2], filterinds(ARs[x-n1+2], tags = "Right")...; targetdir = ITensors.In)
+#   end
+#   # println(norm(ALs[1]))
+#   # println()
+#   # println(norm(ALs[2]))
+#   # println()
+#   # println(norm(Cs[1]))
+#   # println()
+#   # println(norm(ARs[2]))
+#
+#   #Start from the right
+#   for (idx, x) in enumerate(reverse(pivot_site+2:n2))
+#     newl = filterinds(ALs[end-idx], tags = "Right")
+#     newr = filterinds(ARs[end-idx+1], tags = "Left")
+#     Cs[end-idx+1] = ITensor(dag(newl)..., dag(newr)...)
+#     ψCⁿ¹ = permute(ψ.C[x-1], commoninds(ψ.C[x-1], ψ.AL[x-1])..., uniqueinds(ψ.C[x-1], ψ.AL[x-1])...)
+#     for I in eachindex(ψCⁿ¹)
+#       v = ψCⁿ¹[I]
+#       if !iszero(v)
+#         Cs[end-idx+1][I] = ψCⁿ¹[I] #Is it still this one for n site?
+#       end
+#     end
+#     #update_tags of Cs:
+#     nl = combiner(newl, tags=tags(only(commoninds(ψ.AL[x-1], ψ.C[x-1]))))
+#     ALs[end-idx] *= nl
+#     Cs[end-idx+1] *= dag(nl)
+#     #
+#     nr = combiner(newr, tags=tags(only(commoninds(ψ.AR[x], ψ.C[x-1]))))
+#     ARs[end-idx+1] *= nr
+#     Cs[end-idx+1] *= dag(nr)
+#     #Now that we have C, we can compute the new ALs
+#     ARs[end-idx] = ortho_polar(ALs[end-idx]*Cs[end-idx+1], filterinds(ALs[end-idx], tags = "Left")...; targetdir = ITensors.In)
+#   end
+#   # println(flux(ALs[end-1]))
+#   # println()
+#   # println(flux(Cs[end]))
+#   # println()
+#   # println(flux(ARs[end-1]))
+#   # println()
+#   # println(flux(ARs[end]))
+#   #At this point, if we have more than range 2, we have fixed everything but the center link indices and the extremities
+#   #Fix the pivot C
+#   newl = filterinds(ALs[pivot_site - n1 + 1], tags = "Right")
+#   newr = filterinds(ARs[pivot_site + 1 - n1 + 1], tags = "Left")
+#   Cs[pivot_site - n1 + 1] = ITensor(dag(newl)..., dag(newr)...)
+#   ψCⁿ¹ = permute(ψ.C[pivot_site], commoninds(ψ.C[pivot_site], ψ.AL[pivot_site])..., uniqueinds(ψ.C[pivot_site], ψ.AL[pivot_site])...)
+#   for I in eachindex(ψCⁿ¹)
+#     v = ψCⁿ¹[I]
+#     if !iszero(v)
+#       Cs[pivot_site - n1 + 1][I] = ψCⁿ¹[I] #Is it still this one for n site?
+#     end
+#   end
+#   #update_tags of Cs:
+#   nl = combiner(newl, tags=tags(only(commoninds(ψ.AL[pivot_site], ψ.C[pivot_site]))))
+#   ALs[pivot_site - n1 + 1] *= nl
+#   Cs[pivot_site - n1 + 1] *= dag(nl)
+#   #
+#   nr = combiner(newr, tags=tags(only(commoninds(ψ.AR[pivot_site+1], ψ.C[pivot_site]))))
+#   ARs[pivot_site+1 - n1 + 1] *= nr
+#   Cs[pivot_site - n1 + 1] *= dag(nr)
+#
+#   #if nbsite > 2, we also need to make sure
+#   if nbsite > 2
+#     new_lindex = combinedind(nl);
+#     oldr = commoninds(ALs[pivot_site - n1 + 2], Cs[pivot_site - n1 + 2])
+#     newAL = ITensor(dag(newl), s[pivot_site+1], oldr...)
+#     tempAL = permute(ALs[pivot_site - n1 + 2], only(filterinds(ALs[pivot_site - n1 + 2]; tags = "Left")), s[pivot_site+1], oldr...)
+#     for I in eachindex(tempAL)
+#       v = tempAL[I]
+#       if !iszero(v)
+#         newAL[I] = tempAL[I]
+#       end
+#     end
+#     ALs[pivot_site - n1 + 2] = newAL * dag(nl)
+#
+#     new_rindex = combinedind(nr);
+#     oldl = commoninds(ARs[pivot_site - n1 + 1], Cs[pivot_site - n1])
+#     newAR = ITensor(oldl..., s[pivot_site], dag(newr))
+#     tempAR = permute(ARs[pivot_site - n1 + 1], oldl..., s[pivot_site], only(filterinds(ARs[pivot_site - n1 + 1]; tags = "Right")))
+#     for I in eachindex(tempAR)
+#       v = tempAR[I]
+#       if !iszero(v)
+#         newAR[I] = tempAR[I]
+#       end
+#     end
+#     ARs[pivot_site - n1 + 1] = newAR * dag(nr)
+#   end
+#
+#   #Fix the extremities
+#   if nsites(ψ) == nbsite - 1
+#     newr = commoninds(ALs[1], Cs[1])
+#     newAL = ITensor(translatecell(translator(ψ), dag(newr)..., -1), s[n1], newr...)
+#     tempAL = permute(ALs[1], commoninds(ALs[1], ψ.AL[n1-1])..., s[n1], newr...)
+#     for I in eachindex(tempAL)
+#       v = tempAL[I]
+#       if !iszero(v)
+#         newAL[I] = tempAL[I]
+#       end
+#     end
+#     ALs[1] = newAL
+#     newl = commoninds(ARs[end], Cs[1])
+#     newAR = ITensor(newl..., s[n2], translatecell(translator(ψ), dag(newl)..., 1))
+#     tempAR = permute(ARs[end], newl..., s[n2], commoninds(ARs[end], ψ.AR[n2+1])...)
+#     for I in eachindex(tempAR)
+#       v = tempAR[I]
+#       if !iszero(v)
+#         newAR[I] = tempAR[I]
+#       end
+#     end
+#     ARs[1] = translatecell(translator(ψ), newAR, -1)
+#   else
+#     ARs[1] = ortho_polar(ALs[1]*Cs[1], ψ.C[n1-1])
+#     ALs[end] = ortho_polar(Cs[end]*ARs[end], ψ.C[n2])
+#   end
+#   return (ALs, Cs, ARs)
+# end
+
+
 function subspace_expansion(
   ψ::InfiniteCanonicalMPS, H, b::Tuple{Int,Int}; maxdim, cutoff, atol=1e-2, kwargs...
 )
   n1, n2 = b
-  lⁿ¹ = commoninds(ψ.AL[n1], ψ.C[n1])
-  rⁿ¹ = commoninds(ψ.AR[n2], ψ.C[n1])
+  nbsite = n2 - n1
+  if nbsite > nsites(ψ) + 1
+    println("Subspace expansion not implemented if the range of the expansion is larger than nsites + 1")
+    flush(stdout)
+    flush(stderr)
+    return (ψ.AL[n1:n2], ψ.C[n1:n2-1], ψ.AR[n1:n2...])
+  end
+
+  pivot_site = n1 + div(nbsite, 2)
+  #lⁿ¹ = commoninds(ψ.AL[n1], ψ.C[n1])
+  #rⁿ¹ = commoninds(ψ.AR[n1+1], ψ.C[n1])
+  lⁿ¹ = commoninds(ψ.AL[pivot_site], ψ.C[pivot_site])
+  rⁿ¹ = commoninds(ψ.AR[pivot_site+1], ψ.C[pivot_site])
   l = linkinds(only, ψ.AL)
   r = linkinds(only, ψ.AR)
   s = siteinds(only, ψ)
@@ -183,17 +493,33 @@ function subspace_expansion(
     )
     flush(stdout)
     flush(stderr)
-    return (ψ.AL[n1], ψ.AL[n2]), ψ.C[n1], (ψ.AR[n1], ψ.AR[n2])
+    return (ψ.AL[n1:n2], ψ.C[n1:n2-1], ψ.AR[n1:n2])
   end
   maxdim -= dˡ
 
-  NL = nullspace(ψ.AL[n1], lⁿ¹; atol=atol)
-  NR = nullspace(ψ.AR[n2], rⁿ¹; atol=atol)
-  nL = uniqueinds(NL, ψ.AL[n1])
-  nR = uniqueinds(NR, ψ.AR[n2])
+    temp_left = ψ.AL[n1]
+    for j in n1+1:pivot_site
+      temp_left *= ψ.AL[j]
+    end
+    NL = nullspace(temp_left, lⁿ¹; atol=atol, tags = "leftnullspace")
+    temp_right = ψ.AR[n2]
+    for j in n2-1:-1:pivot_site+1
+      temp_right *= ψ.AR[j]
+    end
+    NR = nullspace(temp_right, rⁿ¹; atol=atol, tags = "rightnullspace")
+    nL = only(filterinds(NL, tags =  "leftnullspace"))
+    nR = only(filterinds(NR, tags =  "rightnullspace"))
 
-  ψHN2 = generate_twobody_nullspace(ψ, H, b; atol=atol) * NL * NR
+  # NL = nullspace(ψ.AL[n1], lⁿ¹; atol=atol, tags = "leftnullspace")
+  # temp_right = ψ.AR[n2]
+  # for j in n2-1:-1:n1+1
+  #   temp_right *= ψ.AR[j]
+  # end
+  # NR = nullspace(temp_right, rⁿ¹; atol=atol, tags = "rightnullspace")
+  # nL = only(filterinds(NL, tags =  "leftnullspace"))
+  # nR = only(filterinds(NR, tags =  "rightnullspace"))
 
+  ψHN2 = generate_twobody_nullspace(ψ, H, b; atol=atol)  * NL * NR
   #Added due to crash during testing
   if norm(ψHN2.tensor) < 1e-12
     println(
@@ -201,136 +527,195 @@ function subspace_expansion(
     )
     flush(stdout)
     flush(stderr)
-    return (ψ.AL[n1], ψ.AL[n2]), ψ.C[n1], (ψ.AR[n1], ψ.AR[n2])
+    return (ψ.AL[n1:n2], ψ.C[n1:n2-1], ψ.AR[n1:n2])
   end
 
-  U, S, V = svd(ψHN2, nL; maxdim=maxdim, cutoff=cutoff, kwargs...)
+  U, S, V = svd(ψHN2, nL; maxdim=maxdim, cutoff=cutoff, lefttags = "Right", righttags = "Left", kwargs...)
   if dim(S) == 0 #Crash before reaching this point
-    return (ψ.AL[n1], ψ.AL[n2]), ψ.C[n1], (ψ.AR[n1], ψ.AR[n2])
+    return (ψ.AL[n1:n2], ψ.C[n1:n2-1], ψ.AR[n1:n2])
   end
-  #@show S[end, end]
-  NL *= dag(U)
-  NR *= dag(V)
 
-  ALⁿ¹, newl = ITensors.directsum(
-    ψ.AL[n1] => uniqueinds(ψ.AL[n1], NL),
-    dag(NL) => uniqueinds(NL, ψ.AL[n1]);
+  U, S, V = svd(dag(NL)*U*S*V*dag(NR), commoninds(ψ.AL[n1], NL); maxdim=maxdim, cutoff=cutoff, lefttags = "Right", righttags = "Left", kwargs...)
+
+
+  #@show S[end, end]
+  ALs = Vector{ITensor}(undef, n2-n1+1)
+  ARs = Vector{ITensor}(undef, n2-n1+1)
+  #U *= dag(NL); V *= dag(NR)
+  #Us = Vector{ITensor}(undef, n2-n1); Us[1] = U
+  ALs[1], newl = ITensors.directsum(
+      ψ.AL[n1] => uniqueinds(ψ.AL[n1], NL),
+      U => uniqueinds(U, ψ.AL[n1]);
+      tags=("Right",),
+    )
+
+
+  for j in n1+1:n2-1
+    new_U, new_S, V = svd(S*V, (only(uniqueinds(S, V)), s[j]); maxdim=maxdim, cutoff=cutoff, lefttags = "Right", righttags = "Left", kwargs...)
+    #Needs ordering indices
+    or = uniqueinds(ψ.AL[j], new_U)
+    new = uniqueinds(new_U, ψ.AL[j])
+      if dir(or[1]) != ITensors.Out
+        or = reverse(or)
+      end
+      if dir(or[1]) != dir(new[1])
+        new = reverse(new)
+      end
+      ALs[j-n1+1], newr  = ITensors.directsum(
+              ψ.AL[j] => or,
+              new_U => new;
+              tags=("Left", "Right",),
+            )
+      smallAR = ortho_polar(new_U*new_S, denseblocks(S))
+      or = uniqueinds(ψ.AR[j], smallAR)
+      new = uniqueinds(smallAR, ψ.AR[j])
+        if dir(or[1]) != ITensors.In
+          or = reverse(or)
+        end
+        if dir(or[1]) != dir(new[1])
+          new = reverse(new)
+        end
+        ARs[j-n1+1], newr  = ITensors.directsum(
+                ψ.AR[j] => or,
+                smallAR => new;
+                tags=("Left", "Right",),
+              )
+       S = new_S
+    end
+  ARs[n2-n1+1], = ITensors.directsum(
+    ψ.AR[n2] => uniqueinds(ψ.AR[n2], V),
+    V => uniqueinds(V, ψ.AR[n2]);
     tags=("Left",),
   )
-  ARⁿ², newr = ITensors.directsum(
-    ψ.AR[n2] => uniqueinds(ψ.AR[n2], NR),
-    dag(NR) => uniqueinds(NR, ψ.AR[n2]);
-    tags=("Right",),
-  )
 
-  C = ITensor(dag(newl)..., dag(newr)...)
-  ψCⁿ¹ = permute(ψ.C[n1], lⁿ¹..., rⁿ¹...)
-  for I in eachindex(ψ.C[n1])
-    v = ψCⁿ¹[I]
-    if !iszero(v)
-      C[I] = ψCⁿ¹[I]
+  Cs = Vector{ITensor}(undef, n2-n1)
+  #Start from the left
+  for x in n1:n2-1
+    newl = only(filterinds(ALs[x-n1+1], tags = "Right"))
+    newr = only(filterinds(ARs[x-n1+2], tags = "Left"))
+    Cs[x-n1+1] = ITensor(dag(newl), dag(newr))
+    ψCⁿ¹ = permute(ψ.C[x], commoninds(ψ.C[x], ψ.AL[x])..., uniqueinds(ψ.C[x], ψ.AL[x])...)
+    for I in eachindex(ψCⁿ¹)
+      v = ψCⁿ¹[I]
+      if !iszero(v)
+        Cs[x-n1+1][I] = ψCⁿ¹[I] #Is it still this one for n site?
+      end
     end
   end
-  if nsites(ψ) == 1
-    ALⁿ² = ITensor(commoninds(C, ARⁿ²), uniqueinds(ALⁿ¹, ψ.AL[n1 - 1])...)
-    il = only(uniqueinds(ALⁿ¹, ALⁿ²))
-    ĩl = only(uniqueinds(ALⁿ², ALⁿ¹))
-    for IV in eachindval(inds(ALⁿ¹))
-      ĨV = replaceind_indval(IV, il => ĩl)
-      v = ALⁿ¹[IV...]
+  #Using otho polar to fix the edges
+  ARs[1] = ortho_polar(ALs[1]*Cs[1], ψ.C[n1-1])
+  ALs[end] = ortho_polar(Cs[end]*ARs[end], ψ.C[n2])
+
+  #Special case if the range of the perturbation is the same as the range of AR
+  if nsites(ψ) == nbsite
+    newr = commoninds(ALs[1], Cs[1])
+    if nsites(ψ) > 1
+      newl = commoninds(ALs[end], Cs[end])
+      newAL = ITensor(translatecell(translator(ψ), newl..., -1), s[n1], newr...)
+    else
+      newAL = ITensor(translatecell(translator(ψ), dag(prime(newr))..., -1), s[n1], newr...)
+    end
+    tempAL = permute(ALs[1], commoninds(ALs[1], ψ.AL[n1-1])..., s[n1], newr...)
+    for I in eachindex(tempAL)
+      v = tempAL[I]
       if !iszero(v)
-        ALⁿ²[ĨV...] = v
+        newAL[I] = tempAL[I]
       end
     end
-    ARⁿ¹ = ITensor(commoninds(C, ALⁿ¹), uniqueinds(ARⁿ², ψ.AR[n2 + 1])...)
-    ir = only(uniqueinds(ARⁿ², ARⁿ¹))
-    ĩr = only(uniqueinds(ARⁿ¹, ARⁿ²))
-    for IV in eachindval(inds(ARⁿ²))
-      ĨV = replaceind_indval(IV, ir => ĩr)
-      v = ARⁿ²[IV...]
+    ALs[1] = newAL
+    newl = commoninds(ARs[end], Cs[end])
+    if nsites(ψ) > 1
+      newr = uniqueinds(ARs[1], ψ.AR[n1])
+      newAR = ITensor(newl..., s[n2], translatecell(translator(ψ), newr..., 1))
+    else
+      newAR = ITensor(newl..., s[n2], translatecell(translator(ψ), prime(dag(newl))..., 1))
+    end
+    tempAR = permute(ARs[end], newl..., s[n2], commoninds(ARs[end], ψ.AR[n2+1])...)
+    for I in eachindex(tempAR)
+      v = tempAR[I]
       if !iszero(v)
-        ARⁿ¹[ĨV...] = v
+        newAR[I] = tempAR[I]
       end
     end
-
-    CL = combiner(newl; tags=tags(only(lⁿ¹)))
-    newind = uniqueinds(CL, newl)
-    newind = replacetags(newind, tags(only(newind)), tags(r[n1 - 1]))
-    temp = δ(dag(newind), newr)
-    ALⁿ² *= CL
-    ALⁿ² *= temp
-    CR = combiner(newr; tags=tags(only(rⁿ¹)))
-    newind = uniqueinds(CR, newr)
-    newind = replacetags(newind, tags(only(newind)), tags(l[n2]))
-    temp = δ(dag(newind), newl)
-    ARⁿ¹ *= CR
-    ARⁿ¹ *= temp
-    C = (C * dag(CL)) * dag(CR)
-    return (ALⁿ¹, ALⁿ²), C, (ARⁿ¹, ARⁿ²)
-  else
-    # Also expand the dimension of the neighboring MPS tensors
-    ALⁿ² = ITensor(dag(newl)..., uniqueinds(ψ.AL[n2], ψ.AL[n1])...)
-
-    il = only(uniqueinds(ψ.AL[n2], ALⁿ²))
-    ĩl = only(uniqueinds(ALⁿ², ψ.AL[n2]))
-    for IV in eachindval(inds(ψ.AL[n2]))
-      ĨV = replaceind_indval(IV, il => ĩl)
-      v = ψ.AL[n2][IV...]
-      if !iszero(v)
-        ALⁿ²[ĨV...] = v
-      end
-    end
-
-    ARⁿ¹ = ITensor(dag(newr)..., uniqueinds(ψ.AR[n1], ψ.AR[n2])...)
-
-    ir = only(uniqueinds(ψ.AR[n1], ARⁿ¹))
-    ĩr = only(uniqueinds(ARⁿ¹, ψ.AR[n1]))
-    for IV in eachindval(inds(ψ.AR[n1]))
-      ĨV = replaceind_indval(IV, ir => ĩr)
-      v = ψ.AR[n1][IV...]
-      if !iszero(v)
-        ARⁿ¹[ĨV...] = v
-      end
-    end
-
-    CL = combiner(newl; tags=tags(only(lⁿ¹)))
-    CR = combiner(newr; tags=tags(only(rⁿ¹)))
-    ALⁿ¹ *= CL
-    ALⁿ² *= dag(CL)
-    ARⁿ² *= CR
-    ARⁿ¹ *= dag(CR)
-    C = (C * dag(CL)) * dag(CR)
-    return (ALⁿ¹, ALⁿ²), C, (ARⁿ¹, ARⁿ²)
+    ARs[1] = translatecell(translator(ψ), newAR, -1)
   end
 
-  # TODO: delete or only print when verbose
-  ## ψ₂ = ψ.AL[n1] * ψ.C[n1] * ψ.AR[n2]
-  ## ψ̃₂ = ALⁿ¹ * C * ARⁿ²
-  ## local_energy(ψ, H) = (noprime(ψ * H) * dag(ψ))[]
+  #Only thing left is to join the indices AL-AL and AR-AR
+  #Starting with ALs
+  for j in 2:length(ALs)
+    if nsites(ψ) == 1
+      valid_l = only(filterinds(commoninds(ALs[1], Cs[1]), plev = 0))
+      nl = combiner(valid_l, tags=tags(only(commoninds(ψ.AL[n1+j-2], ψ.C[n1+j-2]))))
+      ALs[1] =noprime(translatecell(translator(ψ), prime(dag(nl)), -1) * ALs[1]* nl )
+      Cs[1] *= dag(nl)
+    else
+    valid_l = only(commoninds(ALs[j-1], Cs[j-1]))
+    if j < length(ALs)
+      replace_l = only(filterinds(ALs[j], tags = "Left"))
+      temp = wδ(dag(valid_l), dag(replace_l))
+      ALs[j] *=  temp
+    end
+    nl = combiner(valid_l, tags=tags(only(commoninds(ψ.AL[n1+j-2], ψ.C[n1+j-2]))))
+    ALs[j-1] *= nl
+    Cs[j-1] *= dag(nl)
+    ALs[j] *= dag(nl)
+      if j == length(ALs) && nsites(ψ) == nbsite
+        ALs[1] *= translatecell(translator(ψ), dag(nl), -1)
+      end
+    end
+  end
+  #Then doing ARs
+  for j in reverse(1:length(ARs)-1)
+    if nsites(ψ) == 1
+      valid_r = only(filterinds(commoninds(ARs[1], Cs[1]), plev = 0))
+      nr = combiner(valid_r, tags=tags(only(commoninds(ψ.AR[n1+j], ψ.C[n1+j-1]))))
+      ARs[1] = noprime( nr * ARs[1] * translatecell(translator(ψ), prime(dag(nr)), 1) )
+      Cs[1] *= dag(nr)
+    else
+    valid_r = only(commoninds(ARs[j+1], Cs[j]))
+    if j > 1
+      replace_r = only(filterinds(ARs[j], tags = "Right"))
+      temp = wδ(dag(valid_r), dag(replace_r))
+      ARs[j] *= temp
+    end
+    nr = combiner(valid_r, tags=tags(only(commoninds(ψ.AR[n1+j], ψ.C[n1+j-1]))))
+    ARs[j+1] *= nr
+    Cs[j] *= dag(nr)
+    ARs[j] *= dag(nr)
+      if j == length(ARs)-1 && nsites(ψ) == nbsite
+        ARs[1] *= translatecell(translator(ψ), nr, -1)
+      end
+    end
+  end
+  #Fix the extremities
 
+  return (ALs, Cs, ARs)
 end
 
+
 function subspace_expansion(ψ, H; kwargs...)
+  range_subspace_expansion = get(kwargs, :range_subspace_expansion, 2)
   ψ = copy(ψ)
   N = nsites(ψ)
   AL = ψ.AL
   C = ψ.C
   AR = ψ.AR
   for n in 1:N
-    n1, n2 = n, n + 1
-    ALⁿ¹², Cⁿ¹, ARⁿ¹² = subspace_expansion(ψ, H, (n1, n2); kwargs...)
-    ALⁿ¹, ALⁿ² = ALⁿ¹²
-    ARⁿ¹, ARⁿ² = ARⁿ¹²
+    n1, n2 = n, n + range_subspace_expansion-1
+    ALs, Cs, ARs = subspace_expansion(ψ, H, (n1, n2); kwargs...)
     if N == 1
-      AL[n1] = ALⁿ²
-      C[n1] = Cⁿ¹
-      AR[n2] = ARⁿ¹
+      #Here need to check that we went through the subspace expansion
+      AL[n1] = ALs[1]
+      C[n1] = Cs[1]
+      AR[n2] = ARs[1]
     else
-      AL[n1] = ALⁿ¹
-      AL[n2] = ALⁿ²
-      C[n1] = Cⁿ¹
-      AR[n1] = ARⁿ¹
-      AR[n2] = ARⁿ²
+      for (idx, x) in enumerate(n1:min(n2, n1+N-1))
+        AL[x] = ALs[idx]
+        AR[x] = ARs[idx]
+      end
+      for (idx, x) in enumerate(n1:n2-1)
+        C[x] = Cs[idx]
+      end
     end
     ψ = InfiniteCanonicalMPS(AL, C, AR)
   end

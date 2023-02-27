@@ -249,3 +249,27 @@ function entropies(psi::InfiniteCanonicalMPS)
   end
   return entropies
 end
+
+function check_canonical_form(ψ::InfiniteCanonicalMPS; tol = 1e-12)
+  N = nsites(ψ)
+  for j in 1:N
+    if order(ψ.AL[j]*ψ.AL[j+1]) != 4
+      println("Problem connecting ψ.AL at $j $(j+1)")
+    end
+    if order(ψ.AR[j]*ψ.AR[j+1]) != 4
+      println("Problem connecting ψ.AR at $j $(j+1)")
+    end
+    if order(ψ.AL[j]*ψ.C[j]) != 3
+      println("Problem connecting ψ.AL with ψ.C at $j")
+    end
+    if order(ψ.AR[j+1]*ψ.C[j]) != 3
+      println("Problem connecting ψ.AR with ψ.C at $j $(j+1)")
+    end
+  end
+  for j in 1:N
+    temp = norm(ψ.AL[j]*ψ.C[j] - ψ.AR[j]*ψ.C[j-1])
+    if temp > tol
+      println("Broken translation invariance with a norm of $temp at site $j")
+    end
+  end
+end

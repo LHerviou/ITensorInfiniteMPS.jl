@@ -393,6 +393,8 @@ function idmrg(
     #  end
     if output_level == 1
       println("Energy after iteration $j is $ener")
+      flush(stdout)
+      flush(stderr)
     end
   end
   return eners, errs
