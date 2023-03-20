@@ -1,12 +1,23 @@
 function unit_cell_terms(
   ::Model"fqhe_2b_pot"; Ly::Float64, Vs::Array{Float64,1}, prec::Float64
 )
-  rough_N = round(Int64, 2 * Ly)
-  coeff = build_two_body_coefficient_pseudopotential(; N_phi=rough_N, Ly=Ly, Vs=Vs)
-  opt = optimize_coefficients(coeff; prec=prec)
-  opt = filter_optimized_Hamiltonian_by_first_site(opt)
+  rough_N = round(Int64, 2 * Ly) - 2
+  test = round(Int64, 2 * Ly) - 2
+  while rough_N <= test
+    rough_N = test + 2
+    coeff = build_two_body_coefficient_pseudopotential(; N_phi=rough_N, Ly=Ly, Vs=Vs)
+    #coeff = Dict{Vector{Int64}, Float64}()
+    #coeff[[0, 3, 2, 1]] = -1.0; coeff[[1, 2, 3, 0]] = -1.0;
+    #coeff[[1, 4, 3, 2]] = -1.0; coeff[[2, 3, 4, 1]] = -1.0;
+    opt = optimize_coefficients(coeff; prec=prec)
+    opt = filter_optimized_Hamiltonian_by_first_site(opt)
+    opt[["N", 1]] = -2.0
+    test = check_max_range_optimized_Hamiltonian(opt)
+    if rough_N > test
+      return generate_Hamiltonian(opt)
+    end
+  end
   #sorted_opt = sort_by_configuration(opt);
-  return generate_Hamiltonian(opt)
 end
 
 #Please contact Loic Herviou before using this part of the code for production

@@ -157,11 +157,14 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
   cLind = combinedind(cL)
   cRind = combinedind(cR)
   #For now, to do the QR, we SVD the overlap matrix.
+  #TODO evaluate the source of error HERE
   temp_M = cL * temp_M * cR
   overlap_mat = dag(prime(temp_M, cRind)) * temp_M / tr(H[3, 3])
   u, lambda, v = svd(
-    overlap_mat, [dag(prime(cRind))]; full=false, cutoff=1e-12, righttags=tags(right_ind)
+    overlap_mat, [dag(prime(cRind))]; full=false, cutoff=1e-16, righttags=tags(right_ind)
   )
+  println(norm(overlap_mat - u * lambda * v))
+  #TODO Is there a better way
   #we now use the orthonormality
   temp = sqrt.(lambda)
   temp = 1 ./ temp
@@ -504,8 +507,8 @@ function compress_impo(H::InfiniteMPOMatrix; kwargs...)
       righttags=tags(only(commoninds(Rs[x], HR[x + 1][2, 2]))),
       kwargs...,
     )
-    println(minimum(diag(Ss[x])))
-    println(sum(diag(Ss[x]) .^ 2))
+    #println(minimum(diag(Ss[x])))
+    #println(sum(diag(Ss[x]) .^ 2))
   end
   Us = CelledVector(Us, translator(H))
   Vsd = CelledVector(Vsd, translator(H))
@@ -651,6 +654,7 @@ function matrixITensorToITensor(
           T = permute(H[x, y], com_inds..., li, ri; allow_alias=true)
           case = 3 #This is the default case, both legs exists
         else
+          #println(x, y)
           !(y == 1 || (x == lx && y == ly)) && error("Incompatible leg")
           T = permute(
             H[x, y] * dummy_right, com_inds..., li, dum_right_ind; allow_alias=true
@@ -665,7 +669,7 @@ function matrixITensorToITensor(
           T = permute(H[x, y] * dummy_left, com_inds..., dum_left_ind, ri; allow_alias=true)
           case = 2
         else
-          !(y == 1 || (x == lx && y == ly)) && error("Incompatible leg")
+          !((x==1 && y == 1) || (x==lx && y == 1) ||(x == lx && y == ly)) && error("Incompatible leg")
           T = permute(
             H[x, y] * dummy_left * dummy_right,
             com_inds...,
@@ -679,7 +683,7 @@ function matrixITensorToITensor(
         #TODO not completely ok for attribution to 1 and end when stuff is missing
         norm(T[b]) == 0 && continue
         if case == 0
-          if x == 1
+          if x == 1 && y == 1
             append!(
               temp_block,
               [
@@ -691,7 +695,19 @@ function matrixITensorToITensor(
                 ),
               ],
             )
-          elseif x == lx
+          elseif x==lx && y == 1
+            append!(
+              temp_block,
+              [
+                Block(
+                  b[1],
+                  b[2],
+                  dic_inv_left_ind[left_basis[end].id, 1],
+                  dic_inv_right_ind[right_basis[1].id, 1],
+                ),
+              ],
+            )
+          elseif x == lx && y == ly
             append!(
               temp_block,
               [
@@ -704,7 +720,7 @@ function matrixITensorToITensor(
               ],
             )
           else
-            error("Something went wrong")
+            error("Something went wrong at $((x, y))")
           end
         elseif case == 1
           append!(
@@ -891,8 +907,7 @@ function InfiniteMPO(H::InfiniteMPOMatrix)
     temp = δ(dag(ris[j]), dag(lis[j + 1]))
     new_H[j + 1] *= temp
   end
-  #for j in 1
-  return lis, ris, new_H
+  return InfiniteMPO(new_H)
 end
 
 function make_block(H::InfiniteMPOMatrix)
@@ -923,7 +938,7 @@ function make_block(H::InfiniteMPOMatrix)
   lis_b = CelledVector([x[2] for x in temp], translator(H))
 
   #retags the right_links
-  s = [commoninds(H[j][1, 1], H[j][end, end])[1] for j in 1:nsites(H)]
+  s = [only(dag(filterinds(commoninds(H[j][1, 1], H[j][end, end]), plev = 0))) for j in 1:nsites(H)]
   for j in 1:nsites(H)
     newTag = "Link,c=$(getcell(s[j])),n=$(getsite(s[j]))"
     temp = replacetags(ris[j], tags(ris[j]), newTag)

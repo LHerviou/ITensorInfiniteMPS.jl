@@ -332,6 +332,13 @@ function idmrg_step(
     end
     iDM.ψ.AR[start+nb_site - 1] = V2
     iDM.ψ.AL[start+nb_site - 1] = ortho_polar(S2*V2, iDM.ψ.C[start + nb_site - 1])
+    if count == nbIterations
+      starting_state = iDM.ψ.AL[start] * iDM.ψ.AL[start + 1] * iDM.ψ.C[start+1]
+      for j in 3:nb_site
+        starting_state *= iDM.ψ.AR[start + j - 1]
+      end
+      println((dag(starting_state) * temp_H(starting_state))[1] / N)
+    end
     #Advance the left environment as long as we are not finished
     if count != nbIterations
       for j in 1:(nb_site ÷ 2)
@@ -339,6 +346,7 @@ function idmrg_step(
       end
       start += nb_site ÷ 2
     end
+
   end
   #By convention, we choose to advance half the unit cell
   for j in 1:(N ÷ 2)
@@ -378,8 +386,11 @@ function idmrg(
   ener = 0
   err = 0
   for j in 1:nb_iterations
-    #  if !mixer
-    ener, err = idmrg_step(iDM; kwargs...)
+    if !mixer
+      ener, err = idmrg_step(iDM; kwargs...)
+    else
+       ener, err = idmrg_step_with_noise(iDM; α = α, kwargs...)
+    end
     append!(eners, ener)
     append!(errs, err)
     if j > 5
@@ -388,9 +399,7 @@ function idmrg(
         return eners, errs
       end
     end
-    #  else
-    #    ener, err = idmrg_step_with_mixer(iDM; α = α, kwargs...)
-    #  end
+
     if output_level == 1
       println("Energy after iteration $j is $ener")
       flush(stdout)
