@@ -140,9 +140,9 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
   # this corresponds to d' = d - tr(d)/tr(1) * 1, R = 1 and t = tr(d)/tr(1)
   s = commoninds(H[1, 1], H[end, end])
   new_H = copy(H)
-  t1 = tr(new_H[3, 2]) / tr(H[3, 3])
-  new_H[3, 2] .= new_H[3, 2] .- t1 * H[3, 3]
-  #From there, we can do a QR of the joint tensor [d', V]. Because we want to reseparate, we need to take add the virtual index to the left of d'
+  t1 = tr(new_H[3, 2]) / tr(new_H[3, 3])
+  new_H[3, 2] = new_H[3, 2] - t1 * H[3, 3]
+  #From there, we can do a QR of the joint tensor [V, d']^T. Because we want to reseparate, we need to take add the virtual index to the left of d'
   temp_M, left_ind, right_ind = matrixITensorToITensor(
     new_H[2:3, 2:2],
     s,
@@ -156,40 +156,20 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
   cR = combiner(right_ind)
   cLind = combinedind(cL)
   cRind = combinedind(cR)
-  #For now, to do the QR, we SVD the overlap matrix.
-  #TODO evaluate the source of error HERE
+
   temp_M = cL * temp_M * cR
-  overlap_mat = dag(prime(temp_M, cRind)) * temp_M / tr(H[3, 3])
-  u, lambda, v = svd(
-    overlap_mat, [dag(prime(cRind))]; full=false, cutoff=1e-16, righttags=tags(right_ind)
-  )
-  println(norm(overlap_mat - u * lambda * v))
-  #TODO Is there a better way
-  #we now use the orthonormality
-  temp = sqrt.(lambda)
-  temp = 1 ./ temp
-  new_V = temp_M * noprime(u) * temp
-  #println("Before")
-  #println((dag(prime(new_V, commoninds(new_V, v))) * new_V).tensor)
-  #new_right_ind = only(commoninds(new_V, v))
-  R = dag(new_V) * temp_M# / tr(H[3, 3])
+
   Q, R, new_right_ind = qr(
-    R,
-    commoninds(R, new_V);
+    temp_M,
+    uniqueinds(temp_M, cRind),
     tags=tags(right_ind),
-    dir=dir(right_ind),
     positive=true,
-    dilatation=1,
-    full=true,
-  )
-  R = R * dag(cR) / tr(H[3, 3])
-  new_V = dag(cL) * new_V * Q
-  #println("After")
-  #println((dag(prime(new_V, commoninds(new_V, R))) * new_V).tensor)
-  #println(norm(new_V*R - dag(cL)*temp_M*dag(cR)))
-  #newV, R, qR_ind = qr(cL*temp_M*cR, [s..., cLind], tags = tags(right_ind), dir = dir(right_ind), positive = false, dilatation = 1)
-  #newV, R, qR_ind = qr(tr(cL*temp_M*cR), [cLind], tags = tags(right_ind), dir = dir(right_ind), positive = false, dilatation = 1)
-  #newV = dag(cL)*newV; R = R*dag(cR)
+    dir=dir(right_ind),
+    dilatation=sqrt(tr(H[3, 3])),
+    full=false,
+  );
+  R = R * dag(cR)
+  new_V = dag(cL) *  Q
 
   #Now, we need to split newV into the actual new V and the new d
   original_left_ind = only(uniqueinds(new_H[2, 2], new_H[3, 2]))
@@ -218,6 +198,7 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
   new_H[3, 2] = itensor(final_d)
   new_H[2, 2] = itensor(final_V)
   #TODO decide whether I give R and t or a matrix?
+  #println(( norm(new_H[2, 2] * R - H[2, 2]), norm(new_H[3, 2] * R + new_H[3, 3] * t1 - H[3, 2])))
   return new_H, R, t1
 end
 
@@ -235,7 +216,7 @@ function block_QR_for_left_canonical(H::InfiniteMPOMatrix)
   # 1
   # b  V
   # c  d  1
-  new_H = copy(H.data)
+  new_H = CelledVector(copy(H.data.data), translator(H))
   Rs = ITensor[]
   ts = ITensor[]
   for j in 1:nsites(H)
@@ -290,7 +271,7 @@ function left_canonical(H; tol=1e-12, max_iter=50)
     end
     j += 1
   end
-  if j == max_iter + 1 && !cont
+  if j == max_iter + 1 && cont
     println("Warning: reached max iterations before convergence")
   else
     println("Left canonicalized in $j iterations")
@@ -343,38 +324,23 @@ function block_QR_for_right_canonical(H::Matrix{ITensor})
   cRind = combinedind(cR)
   #For now, to do the QR, we SVD the overlap matrix.
   temp_M = cL * temp_M * cR
-  overlap_mat = dag(prime(temp_M, cLind)) * temp_M / tr(H[1, 1])
-  u, lambda, v = svd(
-    overlap_mat, [dag(prime(cLind))]; full=false, cutoff=1e-12, righttags=tags(left_ind)
-  )
-  #we now use the orthonormality
-  temp = sqrt.(lambda)
-  temp = 1 ./ temp
-  new_V = temp_M * noprime(u) * temp
-  #println("Before")
-  #println((dag(prime(new_V, commoninds(new_V, v))) * new_V).tensor)
-  #new_right_ind = only(commoninds(new_V, v))
-  R = dag(new_V) * temp_M# / tr(H[3, 3])
-  temp = reversing_δ(only(uniqueinds(R, new_V)))
+
+
   Q, R, new_left_ind = qr(
-    R * temp,
-    commoninds(R, new_V);
-    tags=tags(left_ind),
-    dir=dir(left_ind),
-    positive=true,
-    dilatation=1,
-    full=true,
-  )
-  R = R * dag(temp) * dag(cL) / tr(H[1, 1])
-  temp_left = reversing_δ(new_left_ind) #Is this necessary?
-  new_V = noprime(dag(cR) * new_V * Q * temp_left; tags=tags(new_left_ind))
-  R = noprime(dag(temp_left) * R; tags=tags(new_left_ind))
-  #println("After")
-  #println((dag(prime(new_V, commoninds(new_V, R))) * new_V).tensor)
-  #println(norm(new_V*R - dag(cL)*temp_M*dag(cR)))
-  #newV, R, qR_ind = qr(cL*temp_M*cR, [s..., cLind], tags = tags(right_ind), dir = dir(right_ind), positive = false, dilatation = 1)
-  #newV, R, qR_ind = qr(tr(cL*temp_M*cR), [cLind], tags = tags(right_ind), dir = dir(right_ind), positive = false, dilatation = 1)
-  #newV = dag(cL)*newV; R = R*dag(cR)
+      temp_M,
+      uniqueinds(temp_M, cLind),
+      tags=tags(left_ind),
+      positive=true,
+      dir=dir(left_ind),
+      dilatation=sqrt(tr(H[3, 3])),
+      full=false,
+    );
+  R = R * dag(cL)
+  #temp_left = reversing_δ(new_left_ind) #Is this necessary?
+  #new_V = noprime(dag(cR) * new_V * Q * temp_left; tags=tags(new_left_ind))
+  #R = noprime(dag(temp_left) * R; tags=tags(new_left_ind))
+
+  new_V = dag(cR) * Q
 
   #Now, we need to split newV into the actual new V and the new d
   original_right_ind = only(uniqueinds(new_H[2, 2], new_H[2, 1]))
@@ -422,7 +388,7 @@ function block_QR_for_right_canonical(H::InfiniteMPOMatrix)
   # 1
   # b  V
   # c  d  1
-  new_H = copy(H.data)
+  new_H = CelledVector(copy(H.data.data), translator(H))
   Rs = ITensor[]
   ts = ITensor[]
   for j in reverse(1:nsites(H))
@@ -505,19 +471,18 @@ function compress_impo(H::InfiniteMPOMatrix; kwargs...)
       commoninds(Rs[x], HL[x][2, 2]);
       lefttags=tags(only(commoninds(Rs[x], HL[x][2, 2]))),
       righttags=tags(only(commoninds(Rs[x], HR[x + 1][2, 2]))),
-      kwargs...,
+      kwargs...
     )
-    #println(minimum(diag(Ss[x])))
     #println(sum(diag(Ss[x]) .^ 2))
   end
   Us = CelledVector(Us, translator(H))
   Vsd = CelledVector(Vsd, translator(H))
   Ss = CelledVector(Ss, translator(H))
-  newHL = copy(HL.data)
-  newHR = copy(HR.data)
+  newHL = copy(HL.data.data)
+  newHR = copy(HR.data.data)
   for x in 1:nsites(H)
     ## optimizing the left canonical
-    newHL[x][2, 1] = dag(Us[x - 1]) * newHL[x][2, 1]
+    newHL[x][2, 1] =  dag(Us[x - 1]) * newHL[x][2, 1]
     newHL[x][3, 2] = newHL[x][3, 2] * Us[x]
     newHL[x][2, 2] = dag(Us[x - 1]) * newHL[x][2, 2] * Us[x]
     ## optimizing the right canonical
@@ -525,7 +490,7 @@ function compress_impo(H::InfiniteMPOMatrix; kwargs...)
     newHR[x][3, 2] = newHR[x][3, 2] * dag(Vsd[x])
     newHR[x][2, 2] = Vsd[x - 1] * newHR[x][2, 2] * dag(Vsd[x])
   end
-  return InfiniteMPOMatrix(newHL), InfiniteMPOMatrix(newHR)
+  return InfiniteMPOMatrix(newHL, translator(H)), InfiniteMPOMatrix(newHR, translator(H))
 end
 
 function matrixITensorToITensor(

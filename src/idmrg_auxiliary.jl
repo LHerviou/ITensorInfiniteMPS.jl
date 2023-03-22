@@ -20,7 +20,7 @@ function LinearAlgebra.qr(A::ITensor, Linds...; kwargs...)
   temp_A = left_combiner * (A * right_combiner)
 
   QT, RT = qr(ITensors.tensor(temp_A); kwargs...)
-  Q, R = itensor(QT), itensor(RT)
+  Q = itensor(QT); R = itensor(RT);
   q = commonind(Q, R)
   settags!(Q, tags, q)
   settags!(R, tags, q)
@@ -89,10 +89,10 @@ function LinearAlgebra.qr(
     indsQ = [inds(T)[1], centerind]
     indsR = [dag(centerind), inds(T)[2]]
     Q = ITensors.BlockSparseTensor(
-      ElT, undef, [Block(b[1], b[1]) for (n, b) in enumerate(eachnzblock(T))], indsQ
+      ElT, undef, Block{2}[Block(b[1], b[1]) for (n, b) in enumerate(eachnzblock(T))], indsQ #Something happened to blocks or collect
     )
     R = ITensors.BlockSparseTensor(
-      ElT, undef, [Block(b[1], b[2]) for (n, b) in enumerate(eachnzblock(T))], indsR
+      ElT, undef, Block{2}[Block(b[1], b[2]) for (n, b) in enumerate(eachnzblock(T))], indsR
     )
     for (n, b) in enumerate(eachnzblock(T))
       qb = Block(b[1], b[1])
@@ -120,10 +120,10 @@ function LinearAlgebra.qr(
     indsR = [dag(centerind), inds(T)[2]]
 
     Q = ITensors.BlockSparseTensor(
-      ElT, undef, [Block(b[1], seen[b[2]]) for (n, b) in enumerate(eachnzblock(T))], indsQ
+      ElT, undef, Block{2}[Block(b[1], seen[b[2]]) for b in eachnzblock(T)], indsQ
     )
     R = ITensors.BlockSparseTensor(
-      ElT, undef, [Block(seen[b[2]], b[2]) for (n, b) in enumerate(eachnzblock(T))], indsR
+      ElT, undef, Block{2}[Block(seen[b[2]], b[2]) for (n, b) in enumerate(eachnzblock(T))], indsR
     )
     for (n, b) in enumerate(eachnzblock(T))
       qb = Block(b[1], seen[b[2]])

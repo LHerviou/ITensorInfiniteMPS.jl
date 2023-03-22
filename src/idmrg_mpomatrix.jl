@@ -337,7 +337,7 @@ function idmrg_step(
       for j in 3:nb_site
         starting_state *= iDM.ψ.AR[start + j - 1]
       end
-      println((dag(starting_state) * temp_H(starting_state))[1] / N)
+      #println((dag(starting_state) * temp_H(starting_state))[1] / N)
     end
     #Advance the left environment as long as we are not finished
     if count != nbIterations
