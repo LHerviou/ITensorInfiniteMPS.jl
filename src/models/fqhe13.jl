@@ -1,16 +1,23 @@
-function unit_cell_terms(
-  ::Model"fqhe_2b_pot"; Ly::Float64, Vs::Array{Float64,1}, prec::Float64
-)
-  rough_N = round(Int64, 2 * Ly)
-  coeff = build_two_body_coefficient_pseudopotential(; N_phi=rough_N, Ly=Ly, Vs=Vs)
-  opt = optimize_coefficients(coeff; prec=prec)
-  opt = filter_optimized_Hamiltonian_by_first_site(opt)
-  #sorted_opt = sort_by_configuration(opt);
-  return generate_Hamiltonian(opt)
-end
-
 #Please contact Loic Herviou before using this part of the code for production
 # loic.herviou@epfl.ch
+
+function unit_cell_terms(
+  ::Model"fqhe_2b_pot"; Ly::Float64, Vs::Array{Float64,1}, prec::Float64, shift=0.0
+)
+  rough_N = round(Int64, 2 * Ly) - 2
+  test = round(Int64, 2 * Ly) - 2
+  while rough_N <= test #Normally, this guess is good enough. But I prefer to check
+    rough_N = test + 2
+    coeff = build_two_body_coefficient_pseudopotential(; N_phi=rough_N, Ly=Ly, Vs=Vs)
+    opt = optimize_coefficients(coeff; prec=prec)
+    opt = filter_optimized_Hamiltonian_by_first_site(opt)
+    opt[["N", 1]] = shift #This term never appears in the model. It is useful when doing subspace expansion with MPO
+    test = check_max_range_optimized_Hamiltonian(opt)
+    if rough_N > test
+      return generate_Hamiltonian(opt)
+    end
+  end
+end
 ###############################
 ###Pseudpotentials
 ###############################
@@ -156,16 +163,6 @@ function check_max_range_optimized_Hamiltonian(coeff::Dict)
   return temp
 end
 
-function sort_by_configuration(coeff::Dict)
-  res = Dict()
-  for (k, v) in coeff
-    if !haskey(res, k[1:2:end])
-      res[k[1:2:end]] = Dict()
-    end
-    res[k[1:2:end]][k] = v
-  end
-  return res
-end
 """
     sqrtfactorial(m)
 Return `sqrt(m!)`
@@ -177,31 +174,6 @@ function sqrtfactorial(m)
     res *= sqrt(j)
   end
   return res
-end
-
-"""
-    Laguerre_polynomial(x; n=0)
-Return the Laguerre polynomial of arbitrary degre
-Inputs: `x` the input and `n` the degree of the Laguerre polynomial
-Output: the value of the Laguerre polynomial
-"""
-function Laguerre_polynomial(x; n=0)
-  if n == 0
-    return 1
-  elseif n == 1
-    return 1 - x
-  elseif n == 2
-    return x^2 / 2 - 2x + 1
-  end
-  Lm2 = 1
-  Lm1 = 1 - x
-  Lm = x^2 / 2 - 2x + 1
-  for j in 3:n
-    Lm2 = Lm1
-    Lm1 = Lm
-    Lm = ((2j - 1 - x) * Lm1 - (j - 1) * Lm2) / j
-  end
-  return Lm
 end
 
 """
