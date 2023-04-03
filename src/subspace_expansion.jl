@@ -18,7 +18,7 @@ function generate_twobody_nullspace(
 
   range_H = nrange(ψ, H[1])
 
-  @assert range_H > 1 "Not defined for purely local Hamiltonians"
+  @assert range_H > 1 "Subspace expansion for InfiniteSum{MPO} is not defined for purely local Hamiltonians"
 
   if range_H > 2
     ψᴴ = dag(ψ)
@@ -26,11 +26,11 @@ function generate_twobody_nullspace(
   end
 
   if range_H == 2
-    ψH2 = noprime(ψ.AL[n1] * H[n1][1] * H[n1][2] * ψ.C[n1] * ψ.AR[n2])
+    ψH2 = (ψ.AL[n1] * ψ.C[n1] * H[n1][1]) * (ψ.AR[n2] * H[n1][2])
+    ψH2 = noprime(ψH2)
   else   # Should be a better version now
     ψH2 =
-      H[n1][end] *
-      (ψ.AR[n2 + range_H - 2] * (ψ′.AR[n2 + range_H - 2] * δʳ(n2 + range_H - 2)))
+      ψ.AR[n2 + range_H - 2] * H[n1][end] * (ψ′.AR[n2 + range_H - 2] * δʳ(n2 + range_H - 2))
     common_sites = findsites(ψ, H[(n1, n2)])
     idx = length(common_sites) - 1
     for j in reverse(1:(range_H - 3))
@@ -56,38 +56,40 @@ function generate_twobody_nullspace(
 
     ψH2 = noprime(ψH2)
     for n in 1:(range_H - 2)
-      temp_H2 = δʳ(n2 + range_H - 2 - n)
+      temp_H2_right = δʳ(n2 + range_H - 2 - n)
       common_sites = findsites(ψ, H[n1 - n])
       idx = length(common_sites)
       for j in (n2 + range_H - 2 - n):-1:(n2 + 1)
         if j == common_sites[idx]
-          temp_H2 = temp_H2 * ψ.AR[j] * H[n1 - n][idx] * ψ′.AR[j]
+          temp_H2_right = temp_H2_right * ψ.AR[j] * H[n1 - n][idx] * ψ′.AR[j]
           idx -= 1
         else
-          temp_H2 = temp_H2 * ψ.AR[j] * (δˢ(j) * ψ′.AR[j])
+          temp_H2_right = temp_H2_right * ψ.AR[j] * (δˢ(j) * ψ′.AR[j])
         end
       end
       if common_sites[idx] == n2
-        temp_H2 = temp_H2 * ψ.AR[n2] * H[n1 - n][idx]
+        temp_H2_right = temp_H2_right * ψ.AR[n2] * H[n1 - n][idx]
         idx -= 1
       else
-        temp_H2 = temp_H2 * ψ.AR[n2] * δˢ(n2)
+        temp_H2_right = temp_H2_right * ψ.AR[n2] * δˢ(n2)
       end
       if common_sites[idx] == n1
-        temp_H2 = temp_H2 * (ψ.AL[n1] * ψ.C[n1]) * H[n1 - n][idx]
+        temp_H2_right = temp_H2_right * (ψ.AL[n1] * ψ.C[n1]) * H[n1 - n][idx]
         idx -= 1
       else
-        temp_H2 = temp_H2 * ((ψ.AL[n1] * δˢ(n1)) * ψ.C[n1])
+        temp_H2_right = temp_H2_right * ((ψ.AL[n1] * δˢ(n1)) * ψ.C[n1])
       end
-      for j in 1:n
+      idx = n - idx + 1
+      temp_H2_left = δˡ(n1 - n - 1)
+      for j in reverse(1:n)
         if n1 - j == common_sites[idx]
-          temp_H2 = temp_H2 * ψ.AL[n1 - j] * H[n1 - n][idx] * ψ′.AL[n1 - j]
-          idx -= 1
+          temp_H2_left = temp_H2_left * ψ.AL[n1 - j] * H[n1 - n][idx] * ψ′.AL[n1 - j]
+          idx += 1
         else
-          temp_H2 = temp_H2 * (ψ.AL[n1 - j] * δˢ(n1 - j)) * ψ′.AL[n1 - j]
+          temp_H2_left = temp_H2_left * (ψ.AL[n1 - j] * δˢ(n1 - j)) * ψ′.AL[n1 - j]
         end
       end
-      ψH2 = ψH2 + noprime(temp_H2 * δˡ(n1 - n - 1))
+      ψH2 = ψH2 + noprime(temp_H2_left * temp_H2_right)
     end
   end
   return ψH2
@@ -227,7 +229,7 @@ function subspace_expansion(
   @assert dˡ == dʳ
   if dˡ ≥ maxdim
     println(
-      "Current bond dimension at bond $b is $dˡ while desired maximum dimension is $maxdim, skipping bond dimension increase",
+      "Current bond dimension at bond $b is $dˡ while desired maximum dimension is $maxdim, skipping bond dimension increase at $b",
     )
     flush(stdout)
     flush(stderr)
@@ -261,7 +263,7 @@ function subspace_expansion(
   #Added due to crash during testing
   if norm(ψHN2.tensor) < 1e-12
     println(
-      "Impossible to do a subspace expansion, probably due to conservation constraints"
+      "The two-site subspace expansion produced a zero-norm expansion at $b. This is likely due to the long-range nature of the QN conserving Hamiltonian.",
     )
     flush(stdout)
     flush(stderr)
