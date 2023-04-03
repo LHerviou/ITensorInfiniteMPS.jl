@@ -34,9 +34,9 @@ include("itensormap.jl")
 include("celledvectors.jl")
 include("abstractinfinitemps.jl")
 include("infinitemps.jl")
-include("infinitempo.jl")
 include("infinitecanonicalmps.jl")
 include("infinitempomatrix.jl")
+include("infinitempo.jl")
 include("transfermatrix.jl")
 include("models/models.jl")
 include("models/fqhe13.jl")
@@ -45,6 +45,7 @@ include("models/ising_extended.jl")
 include("models/heisenberg.jl")
 include("models/hubbard.jl")
 include("models/xx.jl")
+include("models/correlated_hopping.jl")
 include("orthogonalize.jl")
 include("infinitemps_approx.jl")
 include("subspace_expansion.jl")
@@ -52,9 +53,13 @@ include("vumps_generic.jl")
 include("vumps_localham.jl")
 include("vumps_nonlocalham.jl")
 include("vumps_mpo.jl")
+include("idmrg_mpomatrix.jl")
+include("idmrg_infinitempo.jl")
+include("idmrg_auxiliary.jl")
 
 export Cell,
   CelledVector,
+  iDMRGStructure,
   InfiniteMPS,
   InfiniteCanonicalMPS,
   InfMPS,
@@ -69,6 +74,8 @@ export Cell,
   Model,
   @Observable_str,
   Observable,
+  advance_environments,
+  idmrg,
   input_inds,
   infinitemps_approx,
   infsiteinds,

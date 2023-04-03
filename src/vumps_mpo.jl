@@ -138,7 +138,7 @@ function left_environment(H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS; tol=1e
   for n in 2:N
     Ls[n] = apply_local_left_transfer_matrix(Ls[n - 1], H, ψ, n)
   end
-  return CelledVector(Ls), eₗ[1]
+  return CelledVector(Ls, translator(ψ)), eₗ[1]
 end
 
 # Struct for use in linear system solver
@@ -301,7 +301,7 @@ function right_environment(H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS; tol=1
       Rs[n] = apply_local_right_transfer_matrix(Rs[n + 1], H, ψ, n)
     end
   end
-  return CelledVector(Rs), eᵣ[1]
+  return CelledVector(Rs, translator(ψ)), eᵣ[1]
 end
 
 function vumps(H::InfiniteMPOMatrix, ψ::InfiniteMPS; kwargs...)
@@ -361,10 +361,10 @@ function tdvp_iteration_sequential(
   _solver_tol = solver_tol(ϵᵖʳᵉˢ)
   N = nsites(ψ)
 
-  C̃ = InfiniteMPS(Vector{ITensor}(undef, N))
-  Ãᶜ = InfiniteMPS(Vector{ITensor}(undef, N))
-  Ãᴸ = InfiniteMPS(Vector{ITensor}(undef, N))
-  Ãᴿ = InfiniteMPS(Vector{ITensor}(undef, N))
+  C̃ = InfiniteMPS(Vector{ITensor}(undef, N), translator(ψ))
+  Ãᶜ = InfiniteMPS(Vector{ITensor}(undef, N), translator(ψ))
+  Ãᴸ = InfiniteMPS(Vector{ITensor}(undef, N), translator(ψ))
+  Ãᴿ = InfiniteMPS(Vector{ITensor}(undef, N), translator(ψ))
 
   eL = zeros(N)
   eR = zeros(N)
@@ -423,10 +423,10 @@ function tdvp_iteration_parallel(
   _solver_tol = solver_tol(ϵᵖʳᵉˢ)
   N = nsites(ψ)
 
-  C̃ = InfiniteMPS(Vector{ITensor}(undef, N))
-  Ãᶜ = InfiniteMPS(Vector{ITensor}(undef, N))
-  Ãᴸ = InfiniteMPS(Vector{ITensor}(undef, N))
-  Ãᴿ = InfiniteMPS(Vector{ITensor}(undef, N))
+  C̃ = InfiniteMPS(Vector{ITensor}(undef, N), translator(ψ))
+  Ãᶜ = InfiniteMPS(Vector{ITensor}(undef, N), translator(ψ))
+  Ãᴸ = InfiniteMPS(Vector{ITensor}(undef, N), translator(ψ))
+  Ãᴿ = InfiniteMPS(Vector{ITensor}(undef, N), translator(ψ))
 
   eL = zeros(1)
   eR = zeros(1)

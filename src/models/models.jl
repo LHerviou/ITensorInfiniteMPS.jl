@@ -52,7 +52,7 @@ function shift_sites(term::Scaled{C,Prod{Op}}, shift::Int) where {C}
 end
 
 # Shift the sites of the terms of the OpSum by shift.
-# By default, it shifts 
+# By default, it shifts
 function shift_sites(opsum::OpSum, shift::Int)
   shifted_opsum = OpSum()
   for o in ITensors.terms(opsum)
@@ -78,6 +78,7 @@ function InfiniteSum{MPO}(opsum::OpSum, s::CelledVector)
   ]
   return InfiniteSum{MPO}(mpos, translator(s))
 end
+
 # Helper function to make an MPO
 import ITensors: op
 op(::OpName"Zero", ::SiteType, s::Index) = ITensor(s', dag(s))
@@ -117,8 +118,7 @@ function ITensors.MPO(model::Model, s::Vector{<:Index}; kwargs...)
   return splitblocks(linkinds, MPO(opsum, s))
 end
 
-translatecell(translator, opsum::OpSum, n::Integer) = translator(opsum, n)
-
+translatecell(translator::Function, opsum::OpSum, n::Integer) = translator(opsum, n)
 function infinite_terms(model::Model; kwargs...)
   # An `OpSum` storing all of the terms in the
   # first unit cell.
@@ -144,7 +144,7 @@ function infinite_terms(opsum::OpSum; kwargs...)
     end
   end
   opsum_cell = [opsum_cell_dict[j] for j in 1:nsites]
-  function _shift_cell(opsum::OpSum, cell::Int)
+  function _shift_cell(opsum, cell::Int)
     return shift_sites(opsum, nsites * cell)
   end
   return CelledVector(opsum_cell, _shift_cell)

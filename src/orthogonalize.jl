@@ -121,8 +121,96 @@ function ortho_overlap(AC, C)
   return noprime(AL)
 end
 
-function ortho_polar(AC, C)
+function ortho_polar(AC, C::ITensor)
   UAC, _ = polar(AC, uniqueinds(AC, C))
   UC, _ = polar(C, commoninds(C, AC))
   return noprime(UAC) * noprime(dag(UC))
+end
+
+function ortho_polar(AC, C::Index; targetdir = ITensors.Out)
+  UAC, _ = polar(AC, uniqueinds(AC, C))
+  new_index = only(uniqueinds(UAC, uniqueinds(AC, C)))
+  if dir(new_index) != targetdir
+    UAC = UAC  * wδ(dag(new_index), prime(flip_sign(dag(new_index))))
+  end
+  return noprime(UAC)
+end
+
+function diag_ortho_polar(AC, C)
+  UAC, _ = polar(AC, uniqueinds(AC, C))
+  return noprime(UAC) * dag(δ(inds(C)...))
+end
+
+function diag_ortho_polar_both(AC, C)
+  UAC, Cbis = polar(AC, uniqueinds(AC, C))
+  new_ind = flip_sign(only(commoninds(Cbis, UAC)))
+  return noprime(UAC * wδ(only(commoninds(Cbis, UAC)), new_ind)),
+  noprime(Cbis * wδ(only(commoninds(UAC, Cbis)), dag(new_ind)))
+end
+
+function flip_sign(ind::Index{Vector{Pair{QN,Int64}}})
+  space = copy(ind.space)
+  for (x, sp) in enumerate(space)
+    if length(sp[1][1].name) == 0 || length(sp[1][2].name) == 0
+      max_flip = 1
+    elseif length(sp[1][3].name) == 0
+      max_flip = 2
+    elseif length(sp[1][4].name) == 0
+      max_flip = 3
+    else
+      max_flip = 4
+    end
+    space[x] =
+      QN(
+        [(qn.name, -qn.val, qn.modulus) for (y, qn) in enumerate(ind.space[x][1])][1:max_flip]...,
+      ) => ind.space[x][2]
+  end
+  return Index(space; tags=ind.tags, dir=ind.dir, plev=ind.plev)
+end
+
+#δ, but matching the symmetries. Not sure it does not slow down some things.
+function wδ(indl, indr)
+  if length(indl.space) > length(indr.space)
+    return wδ(indr, indl)
+  end
+  res = ITensor(indl, indr)
+  shift_left = 1
+  visited = zeros(Int64, length(indr.space))
+  for spl in indl.space
+    start_right = 1
+    for (idxr, spr) in enumerate(indr.space)
+      if spl[1] * indl.dir == -spr[1] * indr.dir && visited[idxr] == 0
+        for x in 0:min(spl[2] - 1, spr[2] - 1)
+          res[shift_left + x, start_right + x] = 1.0
+        end
+        visited[idxr] = 1
+        break
+      else
+        start_right += spr[2]
+      end
+    end
+    shift_left += spl[2]
+  end
+  return res
+end
+
+function ITensors.truncate!(psi::InfiniteCanonicalMPS; kwargs...)
+  n = nsites(psi)
+  site_range=get(kwargs, :site_range, 1:n+1)
+
+  s = siteinds(only, psi.AL)
+  for j in first(site_range):last(site_range)-1
+    left_indices = [ only(filter(x->dir(x) == ITensors.Out, commoninds(psi.AL[j], psi.AL[j-1]))), s[j] ]
+    new_tag = tags(only(commoninds(psi.AL[j], psi.C[j])))
+    U, S, V = svd(psi.AL[j]*psi.C[j]*psi.AR[j+1], left_indices, lefttags=new_tag, righttags = new_tag; kwargs...)
+    psi.AL[j] = U
+    psi.AR[j+1] = V
+    psi.C[j] = denseblocks(itensor(S))
+    #TODO this choice preserve the AL C = C AR on the untouched bonds, but not on the middle. Is it really the best choice?
+    # Note that it in principle does not really matter when doing the iDMRG
+    temp_R = ortho_polar(U * S, psi.C[j - 1])
+    psi.AR[j] = temp_R
+    temp_L = ortho_polar(S * V, psi.C[j + 1])
+    psi.AL[j+1] = temp_L
+  end
 end

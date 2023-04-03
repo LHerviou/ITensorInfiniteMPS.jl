@@ -39,6 +39,14 @@ function Base.:*(qnval::ITensors.QNVal, n::Int)
   return setval(qnval, Int(prod_val))
 end
 
+function Base.:*(qnval::ITensors.QNVal, n::Int)
+  div_val = ITensors.val(qnval) * n
+  if !isinteger(div_val)
+    error("Multiplying $qnval by $n, the resulting QN value is not an integer")
+  end
+  return setval(qnval, Int(div_val))
+end
+
 # TODO: Move to ITensors.jl
 function Base.:/(qn::QN, n::Int)
   return QN(map(qnval -> qnval / n, qn.data))
@@ -285,19 +293,82 @@ function ITensors.expect(ψ::InfiniteCanonicalMPS, h::MPO)
   ns = ITensorInfiniteMPS.findsites(ψ, h)
   nrange = ns[end] - ns[1] + 1
   idx = 2
-  temp_O = δˡ(ns[1] - 1) * ψ.AL[ns[1]] * ψ′.AL[ns[1]] * h[1]
+  temp_O = δˡ(ns[1] - 1) * ψ.AL[ns[1]] * h[1] * ψ′.AL[ns[1]]
   for n in (ns[1] + 1):(ns[1] + nrange - 1)
     if n == ns[idx]
-      temp_O = temp_O * ψ.AL[n] * ψ′.AL[n] * h[idx]
+      temp_O = temp_O * ψ.AL[n] * h[idx] * ψ′.AL[n]
       idx += 1
     else
-      temp_O = temp_O * ψ.AL[n] * δˢ(n) * ψ′.AL[n]
+      temp_O = temp_O * (ψ.AL[n] * δˢ(n)) * ψ′.AL[n]
     end
   end
-  temp_O = temp_O * ψ.C[ns[end]] * δʳ(ns[end]) * ψ′.C[ns[end]]
+  temp_O = temp_O * (ψ.C[ns[end]] * denseblocks(δʳ(ns[end])) * ψ′.C[ns[end]])
   return temp_O[]
 end
 
 function ITensors.expect(ψ::InfiniteCanonicalMPS, h::InfiniteSum)
   return [expect(ψ, h[j]) for j in 1:nsites(ψ)]
+end
+
+function ent_spec(psi::InfiniteCanonicalMPS)
+  n = nsites(psi)
+  ent_spec = []
+  for x in 1:n
+    localC = psi.C[x]
+    if isdiag(localC)
+      println("Blah")
+      append!(ent_spec, [localC])
+    else
+      linkl = only(commoninds(psi.C[x], psi.AL[x]))
+      U, S, V = svd(localC, [linkl])
+      append!(ent_spec, [S])
+    end
+  end
+  return ent_spec
+end
+
+function entropies(psi::InfiniteCanonicalMPS)
+  n = nsites(psi)
+  entropies = zeros(n)
+  for x in 1:n
+    ent = 0
+    localC = psi.C[x]
+    if isdiag(localC)
+      for s in 1:size(localC, 1)
+        ent += -2 * localC[s, s]^2 * log(localC[s, s])
+      end
+    else
+      linkl = only(commoninds(psi.C[x], psi.AL[x]))
+      U, S, V = svd(localC, [linkl])
+      for s in 1:size(S)[1]
+        ent += -2 * S[s, s]^2 * log(S[s, s])
+      end
+    end
+    entropies[x] = ent
+  end
+  return entropies
+end
+
+function check_canonical_form(ψ::InfiniteCanonicalMPS; tol = 1e-12)
+  N = nsites(ψ)
+  for j in 1:N
+    if order(ψ.AL[j]*ψ.AL[j+1]) != 4
+      println("Problem connecting ψ.AL at $j $(j+1)")
+    end
+    if order(ψ.AR[j]*ψ.AR[j+1]) != 4
+      println("Problem connecting ψ.AR at $j $(j+1)")
+    end
+    if order(ψ.AL[j]*ψ.C[j]) != 3
+      println("Problem connecting ψ.AL with ψ.C at $j")
+    end
+    if order(ψ.AR[j+1]*ψ.C[j]) != 3
+      println("Problem connecting ψ.AR with ψ.C at $j $(j+1)")
+    end
+  end
+  for j in 1:N
+    temp = norm(ψ.AL[j]*ψ.C[j] - ψ.AR[j]*ψ.C[j-1])
+    if temp > tol
+      println("Broken translation invariance with a norm of $temp at site $j")
+    end
+  end
 end

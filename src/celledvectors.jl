@@ -53,6 +53,7 @@ end
 
 #Transfer the functional properties
 #translatecell(translator, T::ITensor, n::Integer) = translator(T, n)
+translatecell(translator::Function, T, n) = translator(T, n)
 function translatecell(translator::Function, T::ITensor, n::Integer)
   return ITensors.setinds(T, translatecell(translator, inds(T), n))
 end
@@ -70,6 +71,8 @@ translatecelltags(T::ITensor, n::Integer) = translatecell(translatecelltags, T, 
 translatecelltags(T::ITensors.Indices, n::Integer) = translatecell(translatecelltags, T, n)
 #translatecell(T::MPO, n::Integer) = translatecell.(T, n)
 #translatecell(T::Matrix{ITensor}, n::Integer) = translatecell.(T, n)
+#translatecell(i::Index, n::Integer) = translatecell(translatecelltags, i, n)
+#translatecell(is::Union{<:Tuple,<:Vector}, n::Integer) = translatecell(translatecelltags, is, n)
 
 struct CelledVector{T,F} <: AbstractVector{T}
   data::Vector{T}
