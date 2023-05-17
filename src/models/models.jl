@@ -87,6 +87,33 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector; kwargs...)
   return InfiniteMPOMatrix(model, s, translator(s); kwargs...)
 end
 
+# function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; kwargs...)
+#   N = length(s)
+#   temp_H = InfiniteSum{MPO}(model, s; kwargs...)
+#   range_H = ITensorInfiniteMPS.nrange(temp_H)[1]
+#   ls = CelledVector([Index(1, "Link,c=1,n=$n") for n in 1:N], translator)
+#   mpos = [Matrix{ITensor}(undef, 1, 1) for i in 1:N]
+#   for j in 1:N
+#     Hmat = fill(op("Zero", s[j]), range_H + 1, range_H + 1)
+#     identity = op("Id", s[j])
+#     Hmat[1, 1] = identity
+#     Hmat[end, end] = identity
+#     for n in 0:(range_H - 1)
+#       idx = findfirst(x -> x == j, findsites(temp_H[j - n]; ncell=N))
+#       if isnothing(idx)
+#         Hmat[range_H + 1 - n, range_H - n] = identity
+#       else
+#         Hmat[range_H + 1 - n, range_H - n] = temp_H[j - n][idx]#replacetags(linkinds, temp_H[j - n][idx], "Link, l=$n", tags(ls[j-1]))
+#       end
+#     end
+#     mpos[j] = Hmat
+#     #mpos[j] += dense(Hmat) * setelt(ls[j-1] => total_dim) * setelt(ls[j] => total_dim)
+#   end
+#   #return mpos
+#   return InfiniteMPOMatrix(mpos, translator)
+# end
+
+
 function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; kwargs...)
   N = length(s)
   temp_H = InfiniteSum{MPO}(model, s; kwargs...)
@@ -103,15 +130,83 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
       if isnothing(idx)
         Hmat[range_H + 1 - n, range_H - n] = identity
       else
-        Hmat[range_H + 1 - n, range_H - n] = temp_H[j - n][idx]#replacetags(linkinds, temp_H[j - n][idx], "Link, l=$n", tags(ls[j-1]))
+        temp_mat = convert_itensor_matrix(temp_H[j-n][idx]; leftdir = ITensors.In)
+        if size(temp_mat) == (3, 3)
+          Hmat[range_H + 1 - n, range_H - n] = temp_mat[2, 2]
+          Hmat[end, range_H - n] = temp_mat[3, 2]
+          Hmat[range_H + 1 - n, 1] = temp_mat[2, 1]
+          Hmat[range_H + 1 - n, range_H + 1 - n] *= ITensor(filterinds(commoninds(temp_mat[2, 2], temp_mat[2, 1]), tags = "Link"))
+          Hmat[range_H - n, range_H - n] *= ITensor(filterinds(commoninds(temp_mat[2, 2], temp_mat[3, 2]), tags = "Link"))
+        elseif size(temp_mat) == (1, 3)
+          @assert (range_H + 1 - n) == size(Hmat, 1)
+          Hmat[range_H + 1 - n, range_H - n] = temp_mat[1, 2]
+          Hmat[range_H + 1 - n, 1] = temp_mat[1, 1]
+          Hmat[range_H - n, range_H - n] *= ITensor(filterinds(temp_mat[1, 2], tags = "Link"))
+        elseif size(temp_mat) == (3, 1)
+          @assert (range_H-n) == 1
+          @assert isempty(temp_mat[3, 1])
+          Hmat[range_H + 1 - n, range_H - n] = temp_mat[2, 1]
+          #Hmat[end, range_H - n] += temp_mat[3, 1]  #LH This should do nothing #TODO check
+          Hmat[range_H + 1 - n, range_H + 1 - n] *= ITensor(filterinds(temp_mat[2, 1], tags = "Link"))
+        else
+          error("Unexpected matrix form")
+        end
       end
     end
     mpos[j] = Hmat
     #mpos[j] += dense(Hmat) * setelt(ls[j-1] => total_dim) * setelt(ls[j] => total_dim)
   end
-  #return mpos
-  return InfiniteMPOMatrix(mpos, translator)
+  #unify_indices
+  mpos = InfiniteMPOMatrix(mpos, translator)
+  for x in 1:N
+    left_inds = finding_indices(mpos[x]; dir = ITensors.Out)
+    right_inds = finding_indices(mpos[x+1]; dir = ITensors.In)
+    for j in 1:size(mpos[x], 1)
+      for k in 2:size(mpos[x], 2)-1
+        if length(commoninds(mpos.data.data[x][j, k], left_inds[k])) > 0
+          replaceinds!(mpos.data.data[x][j, k],  left_inds[k] => dag(right_inds[k]) )
+        else
+          !isempty(mpos.data.data[x][j, k]) && error("Problem in building Hamiltonians")
+          mpos.data.data[x][j, k] = mpos.data.data[x][j, k] * ITensor(dag(right_inds[k]))
+        end
+      end
+    end
+    for j in 2:size(mpos[x+1], 1)-1
+      for k in 1:size(mpos[x+1], 2)
+        if x+1 == N+1
+          if length(commoninds(mpos[x+1][j, k], right_inds[j])) == 0
+            !isempty(mpos[x+1][j, k]) && error("Problem in building Hamiltonians")
+            mpos.data.data[1][j, k] = mpos.data.data[1][j, k] * ITensor(translatecell(translator, right_inds[j], -1))
+          end
+        else
+          if length(commoninds(mpos.data[x+1][j, k], right_inds[j])) == 0
+            !isempty(mpos.data[x+1][j, k]) && error("Problem in building Hamiltonians")
+            mpos.data.data[x+1][j, k] = mpos.data.data[x+1][j, k] * ITensor(right_inds[j])
+          end
+        end
+      end
+    end
+  end
+  #
+  #   for j in 2:size(mpos[x+1], 1) - 1
+  #     new_ind = filterinds(mpos[x+1][j, 1], tags = "Link")
+  #     length(new_ind) == 0 && continue
+  #     new_ind = only(new_ind)
+  #     old_ind = filterinds(mpos[x][end, j], tags = "Link")
+  #     for k in 1:size(mpos[x], 1)
+  #       if length(commoninds(mpos.data.data[x][k, j], old_ind)) > 0
+  #         replaceinds!(mpos.data.data[x][k, j], old_ind => dag(new_ind) )
+  #       else
+  #         !isempty(mpos.data.data[x][k, j]) && error("Problem in building Hamiltonians")
+  #         mpos.data.data[x][k, j] = mpos.data.data[x][k, j] * ITensor(dag(new_ind))
+  #       end
+  #     end
+  #   end
+  #end
+  return mpos
 end
+
+
 
 function ITensors.MPO(model::Model, s::Vector{<:Index}; kwargs...)
   opsum = opsum_finite(model, length(s); kwargs...)

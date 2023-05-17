@@ -1,15 +1,22 @@
-function ITensors.NDTensors.qr_positive(M::AbstractMatrix; full=false)
-  sparseQ, R = qr(M)
-
-  Q = convert(Matrix, sparseQ)
+function ITensors.NDTensors.qr_positive(M::AbstractMatrix; full=false, tol = 1e-10)
+  #println(typeof(M))
+  sparseQR = qr(M, Val(true))
+  Q = convert(Matrix, sparseQR.Q)
+  #R = convert(Matrix, sparseQR.R *sparseQR.P')
+  R = convert(Matrix, sparseQR.R)
   nc = size(Q, 2)
+  kept_indices = Int64[]
   for c in 1:nc
+    if !(norm(R[c, :]) > tol)
+      continue
+    end
+    append!(kept_indices, c)
     if real(R[c, c]) < 0.0
       R[c, :] *= -1
       Q[:, c] *= -1
     end
   end
-  return (Q, R)
+  return (Q[:, kept_indices], R[kept_indices, :] * sparseQR.P')
 end
 
 function LinearAlgebra.qr(A::ITensor, Linds...; kwargs...)
@@ -47,8 +54,9 @@ function LinearAlgebra.qr(
     end
   end
   # Make the new indices to go onto Q and R
-  q, r = inds(T)
-  q = !full && dim(q) >= dim(r) ? sim(r) : dag(sim(q))
+  #q, r = inds(T)
+  #q = !full && dim(q) >= dim(r) ? sim(r) : dag(sim(q))
+  q = size(QM, 2)
   Qinds = IndsT((ind(T, 1), q))
   Rinds = IndsT((dag(q), ind(T, 2)))
   Q = ITensors.NDTensors.tensor(ITensors.NDTensors.Dense(vec(Matrix(QM))), Qinds)
@@ -114,8 +122,13 @@ function LinearAlgebra.qr(
       ])
       seen[b[2]] = length(seen) + 1
     end
+    # if direction != dir(r)
+    #   temp = copy(seen)
+    #   for (k, v) in seen
+    #     temp[k] = length(seen) + 1 - v
+    #   end
+    # end
     centerind = Index(centerind_space; dir=direction, tags=inds(T)[2].tags)
-
     indsQ = [inds(T)[1], centerind]
     indsR = [dag(centerind), inds(T)[2]]
 

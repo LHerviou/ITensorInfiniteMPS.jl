@@ -39,14 +39,6 @@ function Base.:*(qnval::ITensors.QNVal, n::Int)
   return setval(qnval, Int(prod_val))
 end
 
-function Base.:*(qnval::ITensors.QNVal, n::Int)
-  div_val = ITensors.val(qnval) * n
-  if !isinteger(div_val)
-    error("Multiplying $qnval by $n, the resulting QN value is not an integer")
-  end
-  return setval(qnval, Int(div_val))
-end
-
 # TODO: Move to ITensors.jl
 function Base.:/(qn::QN, n::Int)
   return QN(map(qnval -> qnval / n, qn.data))

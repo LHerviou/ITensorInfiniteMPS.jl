@@ -399,3 +399,34 @@ function InfiniteMPO(H::InfiniteMPOMatrix)
   end
   return InfiniteMPO(new_H)
 end
+
+
+function build_dummy_random_MPO(H::InfiniteMPO)
+    N = nsites(H)
+    data = Vector{ITensor}(undef, N)
+    left_most_leg = 0
+    current_right_leg = 0
+    #Generating the new tensors
+    for x in 1:N-1
+      s = uniqueinds(H[x], H[x-1], H[x+1])
+      legs = sort(uniqueinds(H[x], s), by = x->dir(x) )
+      new_legs = []
+      for l in legs
+        if x > 1 && l.dir == ITensors.In
+          append!(new_legs, [dag(current_right_leg)])
+        else
+          new_space = [q[1] => 1 for q in l.space];
+          append!(new_legs, [Index(new_space, dir = l.dir, tags = l.tags, plev = l.plev)])
+          if l.dir == ITensors.Out
+            current_right_leg = new_legs[end]
+          else #Only activate at x = 1
+            left_most_leg = translatecell(translator(H), new_legs[end], 1)
+          end
+        end
+      end
+      data[x] = randomITensor(new_legs..., s...)
+    end
+    s =  uniqueinds(H[N], H[N-1], H[N+1])
+    data[end] = randomITensor(s..., dag(current_right_leg), dag(left_most_leg))
+    return InfiniteMPO(CelledVector(data, translator(H)))
+end
