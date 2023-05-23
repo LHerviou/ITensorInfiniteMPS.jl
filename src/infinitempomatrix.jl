@@ -446,10 +446,11 @@ end
 function compress_impo(H::InfiniteMPOMatrix; kwargs...)
   smallH = make_block(H)
   HL, Tl1, L = left_canonical(smallH; kwargs...)
-  HR, Tr1, R = right_canonical(HL; kwargs...)
-  left_env = L*Tr1[1]
-  HL, Ts, L = left_canonical(HR; kwargs... )
-  R = Ts[nsites(HR)] * R
+  HR, Tr1, Rr = right_canonical(HL; kwargs...)
+  Lr = L * Tr1[1]
+  left_env = deepcopy(Lr)
+  HL, Ts, Ll = left_canonical(HR; kwargs... )
+  Rl = Ts[nsites(HR)] * Rr
   #At this point, we hav<e HL[1]*Rs[1] = Rs[0] * HR[1] etc
   test_norm = maximum([norm(Ts[x][3, 2]) for x in 1:nsites(H)])
   if  test_norm> 1e-12
@@ -488,9 +489,11 @@ function compress_impo(H::InfiniteMPOMatrix; kwargs...)
     newHR[x][1, 2] = ITensor(commoninds(newHR[x][2, 2], newHR[x][3, 2]) )
     newHR[x][2, 3] = ITensor(commoninds(newHR[x][2, 2], newHR[x][2, 1]) )
   end
-  left_env_LC = copy(L); left_env_LC[2] = left_env_LC[2] * Us[0];
-  right_env_LC = copy(R); right_env_LC[2] = dag(Us[nsites(H)]) * right_env_LC[2];
-  return (InfiniteMPOMatrix(newHL, translator(H)), left_env_LC, right_env_LC), InfiniteMPOMatrix(newHR, translator(H))
+  left_env_LC = deepcopy(Ll); left_env_LC[2] = left_env_LC[2] * Us[0];
+  right_env_LC = deepcopy(Rl); right_env_LC[2] = dag(Us[nsites(H)]) * right_env_LC[2];
+  left_env_RC = deepcopy(Lr); left_env_RC[2] = left_env_RC[2] * dag(Vsd[0]);
+  right_env_RC = deepcopy(Rr); right_env_RC[2] = Vsd[nsites(H)] * right_env_RC[2];
+  return (InfiniteMPOMatrix(newHL, translator(H)), left_env_LC, right_env_LC), (InfiniteMPOMatrix(newHR, translator(H)), left_env_RC, right_env_RC)
 end
 
 function make_block(H::InfiniteMPOMatrix)
