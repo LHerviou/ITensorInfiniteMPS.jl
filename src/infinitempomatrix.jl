@@ -193,7 +193,7 @@ function check_convergence_left_canonical(newH, Ts; tol=1e-12)
   return true
 end
 
-function left_canonical(H; tol=1e-12, max_iter=50, left_env = nothing, ψ = nothing, projection = -1,method = :edge_update)
+function left_canonical(H; tol=1e-12, max_iter=50, left_env = nothing, ψ = nothing, projection = -1,method = :edge_update, kwargs...)
   l1, l2 = size(H[1])
   if (l1 != 3 || l2 != 3)
     H = make_block(H)
@@ -355,7 +355,7 @@ function check_convergence_right_canonical(newH, Ts; tol=1e-12)
   return true
 end
 
-function right_canonical(H; tol=1e-12, max_iter=50, right_env = nothing, ψ = nothing, projection = -1,method = :edge_update)
+function right_canonical(H; tol=1e-12, max_iter=50, right_env = nothing, ψ = nothing, projection = -1,method = :edge_update, kwargs...)
   l1, l2 = size(H[1])
   if (l1 != 3 || l2 != 3)
     H = make_block(H)
@@ -396,11 +396,60 @@ function right_canonical(H; tol=1e-12, max_iter=50, right_env = nothing, ψ = no
 end
 
 
+# function compress_impo(H::InfiniteMPOMatrix; kwargs...)
+#   smallH = make_block(H)
+#   HL, = left_canonical(smallH)
+#   HR, = right_canonical(HL)
+#   HL, Ts = left_canonical(HR)
+#   #At this point, we hav<e HL[1]*Rs[1] = Rs[0] * HR[1] etc
+#   test_norm = maximum([norm(Ts[x][3, 2]) for x in 1:nsites(H)])
+#   if  test_norm> 1e-12
+#     error("Ts should be 0 at this point, instead it is $test_norm")
+#   end
+#   #TODO ? replace this by matrix formmulation?
+#   Us = Vector{ITensor}(undef, nsites(H))
+#   Ss = Vector{ITensor}(undef, nsites(H))
+#   Vsd = Vector{ITensor}(undef, nsites(H))
+#   for x in 1:nsites(H)
+#     Us[x], Ss[x], Vsd[x] = svd(
+#       Ts[x][2, 2],
+#       commoninds(Ts[x][2, 2], HL[x][2, 2]);
+#       lefttags=tags(only(commoninds(Ts[x][2, 2], HL[x][2, 2]))),
+#       righttags=tags(only(commoninds(Ts[x][2, 2], HR[x + 1][2, 2]))),
+#       kwargs...
+#     )
+#     #println(sum(diag(Ss[x]) .^ 2))
+#   end
+#   Us = CelledVector(Us, translator(H))
+#   Vsd = CelledVector(Vsd, translator(H))
+#   Ss = CelledVector(Ss, translator(H))
+#   newHL = copy(HL.data.data)
+#   newHR = copy(HR.data.data)
+#   for x in 1:nsites(H)
+#     ## optimizing the left canonical
+#     newHL[x][2, 1] =  dag(Us[x - 1]) * newHL[x][2, 1]
+#     newHL[x][3, 2] = newHL[x][3, 2] * Us[x]
+#     newHL[x][2, 2] = dag(Us[x - 1]) * newHL[x][2, 2] * Us[x]
+#     newHL[x][1, 2] = ITensor(commoninds(newHL[x][2, 2], newHL[x][3, 2]))
+#     newHL[x][2, 3] = ITensor(commoninds(newHL[x][2, 2], newHL[x][2, 1]))
+#     ## optimizing the right canonical
+#     newHR[x][2, 1] = Vsd[x - 1] * newHR[x][2, 1]
+#     newHR[x][3, 2] = newHR[x][3, 2] * dag(Vsd[x])
+#     newHR[x][2, 2] = Vsd[x - 1] * newHR[x][2, 2] * dag(Vsd[x])
+#     newHR[x][1, 2] = ITensor(commoninds(newHR[x][2, 2], newHR[x][3, 2]) )
+#     newHR[x][2, 3] = ITensor(commoninds(newHR[x][2, 2], newHR[x][2, 1]) )
+#   end
+#   return InfiniteMPOMatrix(newHL, translator(H)), InfiniteMPOMatrix(newHR, translator(H))
+# end
+
+
 function compress_impo(H::InfiniteMPOMatrix; kwargs...)
   smallH = make_block(H)
-  HL, = left_canonical(smallH)
-  HR, = right_canonical(HL)
-  HL, Ts = left_canonical(HR)
+  HL, Tl1, L = left_canonical(smallH; kwargs...)
+  HR, Tr1, R = right_canonical(HL; kwargs...)
+  left_env = L*Tr1[1]
+  HL, Ts, L = left_canonical(HR; kwargs... )
+  R = Ts[nsites(HR)] * R
   #At this point, we hav<e HL[1]*Rs[1] = Rs[0] * HR[1] etc
   test_norm = maximum([norm(Ts[x][3, 2]) for x in 1:nsites(H)])
   if  test_norm> 1e-12
@@ -439,9 +488,10 @@ function compress_impo(H::InfiniteMPOMatrix; kwargs...)
     newHR[x][1, 2] = ITensor(commoninds(newHR[x][2, 2], newHR[x][3, 2]) )
     newHR[x][2, 3] = ITensor(commoninds(newHR[x][2, 2], newHR[x][2, 1]) )
   end
-  return InfiniteMPOMatrix(newHL, translator(H)), InfiniteMPOMatrix(newHR, translator(H))
+  left_env_LC = copy(L); left_env_LC[2] = left_env_LC[2] * Us[0];
+  right_env_LC = copy(R); right_env_LC[2] = dag(Us[nsites(H)]) * right_env_LC[2];
+  return (InfiniteMPOMatrix(newHL, translator(H)), left_env_LC, right_env_LC), InfiniteMPOMatrix(newHR, translator(H))
 end
-
 
 function make_block(H::InfiniteMPOMatrix)
   if size(H[1]) == (3, 3)
