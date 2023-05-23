@@ -113,11 +113,10 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
    #update the empty
    new_H[1, 2] = ITensor(commoninds(new_H[2, 2], new_H[3, 2]))
 
-  #TODO decide whether I give R and t or a matrix?
   #println(( norm(new_H[2, 2] * R - H[2, 2]), norm(new_H[3, 2] * R + new_H[3, 3] * t1 - H[3, 2])))
   T = fill(ITensor(), 3, 3)
   T[1, 1] = ITensor(1); T[3, 3] = ITensor(1)
-  T[3, 1] = ITensor(0); T[1, 3] = ITensor(0)
+  T[3, 1] = ITensor(); T[1, 3] = ITensor()
   T[2, 2] = R; T[3, 2] = t1
   left_ind = only(uniqueinds(R, t1))
   right_ind = only(commoninds(R, t1))
@@ -135,91 +134,41 @@ end
 #   return new_H
 # end
 
-function block_QR_for_left_canonical(H::InfiniteMPOMatrix)
+function apply_mps_to_mpo_on_site(H::Matrix{ITensor}, ψ::ITensor)
+  res = Matrix{ITensor}(undef, size(H)...)
+  ψd = prime(dag(ψ))
+  for x in 1:length(H)
+    res[x] = (H[x] * ψ) * ψd
+  end
+  return res
+end
+
+function block_QR_for_left_canonical(H::InfiniteMPOMatrix; left_env = nothing, method = :edge_update, ψ = nothing)
   #We verify that H is of the form
   # 1
   # b  V
   # c  d  1
   new_H = CelledVector(copy(H.data.data), translator(H))
-  # Rs = ITensor[]
-  # ts = ITensor[]
-  # for j in 1:nsites(H)
-  #   new_H[j], R, t = block_QR_for_left_canonical(new_H[j])
-  #   new_H[j + 1] = apply_left_gauge_on_left(new_H[j + 1], R, t)
-  #   append!(Rs, [R])
-  #   append!(ts, [t])
-  #   #j == nsites(H)-1 && break
-  # end
   Ts = Matrix{ITensor}[]
   for j in 1:nsites(H)
     new_H[j], T = block_QR_for_left_canonical(new_H[j])
     append!(Ts, [T])
+    #We need to update the environment before the left update of site L
+    if !isnothing(left_env) && j == nsites(H)
+      if method == :edge_update
+        isnothing(ψ) && error("State to project not defined")
+        for k in 1:nsites(H)
+          left_env .= left_env * apply_mps_to_mpo_on_site(new_H[k], ψ[k])
+        end
+        left_env = translatecell(translator(H), left_env, -1)
+      end
+    end
     new_H[j + 1] = T * new_H[j + 1]
   end
-  return InfiniteMPOMatrix(new_H),   CelledVector(Ts, translator(new_H))
+  return InfiniteMPOMatrix(new_H),   CelledVector(Ts, translator(new_H)), left_env
   #CelledVector(Rs, translator(new_H)),
   #CelledVector(ts, translator(new_H))
 end
-
-
-function block_QR_for_left_canonical(H::InfiniteMPOMatrix, left_env::Vector{ITensor}; proj = 1)
-  #We verify that H is of the form
-  # 1
-  # b  V
-  # c  d  1
-  new_H = CelledVector(copy(H.data.data), translator(H))
-  Rs = ITensor[]
-  ts = ITensor[]
-  for j in 1:nsites(H)
-    new_H[j], R, t = block_QR_for_left_canonical(new_H[j])
-    new_H[j + 1] = apply_left_gauge_on_left(new_H[j + 1], R, t)
-    append!(Rs, [R])
-    append!(ts, [t])
-    #Now we advance the environment, assuming the block form
-    s = filterinds(new_H[j][1, 1], tags = "Site", plev = 0)
-    dummy_top = ITensor(dag(s)); dummy_top[proj] = 1
-    dummy_down = dag(prime(dummy_top))
-    if !isempty(new_H[j][2, 1])
-      temp =  (new_H[j][2, 1] * dummy_top * dummy_down) * left_env[2]
-      left_env[1] .+= isempty(temp) ? 0 : temp[1]
-    end
-    if !isempty(new_H[j][3, 1])
-      temp = (new_H[j][3, 1]* dummy_top * dummy_down) * left_env[3]
-      left_env[1] += isempty(temp) ? 0 : temp[1]
-    end
-    left_env[2] =  (new_H[j][2, 2]* dummy_top * dummy_down) * left_env[2]
-    if !isempty(new_H[j][3, 2])
-      left_env[2] += (new_H[j][3, 2]* dummy_top * dummy_down) * left_env[3]
-    end
-    #left_env[3] = left_env[3]
-  end
-  left_env = translatecell(translator(H), left_env, -1)
-  return InfiniteMPOMatrix(new_H),
-  CelledVector(Rs, translator(new_H)),
-  CelledVector(ts, translator(new_H)),
-  left_env
-end
-
-# function check_convergence_left_canonical(newH, Rs, ts; tol=1e-12)
-#   return true
-#   for x in 1:nsites(newH)
-#     li, ri = inds(Rs[x])
-#     if li.space != ri.space
-#       return false
-#     end
-#   end
-#   for x in 1:nsites(newH)
-#     if norm(tr(newH[x][3, 2])) > tol
-#       return false
-#     end
-#   end
-#   for x in 1:nsites(newH)
-#     if norm(Rs[x] - denseblocks(δ(inds(Rs[x])...))) > tol
-#       return false
-#     end
-#   end
-#   return true
-# end
 
 function check_convergence_left_canonical(newH, Ts; tol=1e-12)
   for x in 1:nsites(newH)
@@ -244,53 +193,32 @@ function check_convergence_left_canonical(newH, Ts; tol=1e-12)
   return true
 end
 
-# function left_canonical(H; tol=1e-12, max_iter=50)
-#   l1, l2 = size(H[1])
-#   if (l1 != 3 || l2 != 3)
-#     H = make_block(H)
-#   end
-#   temp = ITensor(); temp[1] = 1; temp2 = ITensor(1);
-#   left_env = [temp, ITensor(commoninds(H[0][2, 2], H[1][2, 2])), temp2]
-#   newH, Rs, ts, left_env = block_QR_for_left_canonical(H, left_env)
-#   if check_convergence_left_canonical(newH, Rs, ts; tol)
-#     return newH, Rs, ts, left_env
-#   end
-#   j = 1
-#   cont = true
-#   while j <= max_iter && cont
-#     newH, new_Rs, new_ts = block_QR_for_left_canonical(newH)
-#     cont = !check_convergence_left_canonical(newH, new_Rs, new_ts; tol)
-#     for j in 1:nsites(newH)
-#       ts[j] = ts[j] + Rs[j] * new_ts[j]
-#       Rs[j] = new_Rs[j] * Rs[j]
-#     end
-#     j += 1
-#   end
-#   if j == max_iter + 1 && cont
-#     println("Warning: reached max iterations before convergence")
-#   else
-#     println("Left canonicalized in $(j+1) iterations")
-#   end
-#   return newH, Rs, ts, left_env
-# end
-
-
-function left_canonical(H; tol=1e-12, max_iter=50)
+function left_canonical(H; tol=1e-12, max_iter=50, left_env = nothing, ψ = nothing, projection = -1,method = :edge_update)
   l1, l2 = size(H[1])
   if (l1 != 3 || l2 != 3)
     H = make_block(H)
   end
-  temp = ITensor(); temp[1] = 1; temp2 = ITensor(1);
-  left_env = [temp, ITensor(commoninds(H[0][2, 2], H[1][2, 2])), temp2]
+  if isnothing(left_env)
+    left_env = [ITensor(0), ITensor(commoninds(H[0][2, 2], H[1][2, 2])), ITensor(1)]
+  end
+  if method == :edge_update && isnothing(ψ)
+    projection <= 0 && error("Not enough information to fix the boundaries")
+    s = [dag(only(filterinds(inds(H[k][1, 1]), plev = 0, tags = "Site"))) for k in 1:nsites(H)]
+    ψ = [ITensor(s[k]) for k in 1:nsites(H)]
+    for k in 1:nsites(H)
+      ψ[k][projection] = 1.0
+    end
+    ψ = CelledVector(ψ, translator(H))
+  end
   #newH, Rs, ts, left_env = block_QR_for_left_canonical(H, left_env)
-  newH, Ts = block_QR_for_left_canonical(H)
+  newH, Ts, left_env = block_QR_for_left_canonical(H; left_env, ψ, method )
   if check_convergence_left_canonical(newH, Ts; tol)
-    return newH, Ts#, left_env
+    return newH, Ts, left_env
   end
   j = 1
   cont = true
   while j <= max_iter && cont
-    newH, new_Ts = block_QR_for_left_canonical(newH)
+    newH, new_Ts, left_env = block_QR_for_left_canonical(newH; left_env, ψ, method)
     cont = !check_convergence_left_canonical(newH, new_Ts; tol)
     for j in 1:nsites(newH)
       Ts[j] = new_Ts[j] * Ts[j]
@@ -302,74 +230,9 @@ function left_canonical(H; tol=1e-12, max_iter=50)
   else
     println("Left canonicalized in $(j+1) iterations")
   end
-  return newH, Ts
+  return newH, Ts, left_env
 end
 
-
-##########################################
-# function block_QR_for_right_canonical(H::Matrix{ITensor})
-#   #We verify that H is of the form
-#   # 1
-#   # b  V
-#   # c  d  1
-#   l1, l2 = size(H)
-#   (l1 != 3 || l2 != 3) &&
-#     error("Format of the InfiniteMPO Matrix incompatible with current implementation")
-#   for y in 2:l2
-#     for x in 1:(y - 1)
-#       !isempty(H[x, y]) &&
-#         error("Format of the InfiniteMPO Matrix incompatible with current implementation")
-#     end
-#   end
-#
-#   #=Following https://journals.aps.org/prb/abstract/10.1103/PhysRevB.102.035147  (but with opposite conventions)
-#   we look for
-#   1      =   1  0   x  1
-#   b  V       t  R      b'  V'
-#   where the vectors (V', d') are orthogonal to each other, and to (1, 0)
-#   =#
-#
-#   #We start by orthogonalizing with respect to 1
-#   # this corresponds to d' = d - tr(d)/tr(1) * 1, R = 1 and t = tr(d)/tr(1)
-#   s = commoninds(H[1, 1], H[end, end])
-#   new_H = copy(H)
-#   t1 = tr(new_H[2, 1]) / tr(H[1, 1])
-#   new_H[2, 1] .= new_H[2, 1] .- t1 * H[1, 1]
-#
-#   kept_inds = commoninds(new_H[2, 1], new_H[2, 2]);
-#   to_fuse_ind = only(uniqueinds(new_H[2, 2], kept_inds))
-#   dummy_index = Index(QN()=>1, dir = dir(to_fuse_ind), tags = tags(to_fuse_ind) )
-#   dummy_tensor = ITensor(dummy_index); dummy_tensor[1] = 1
-#   temp_M, fused_ind= directsum( new_H[2, 1]*dummy_tensor => dummy_index, new_H[2, 2] => to_fuse_ind;
-#     tags = tags(dummy_index) )
-#   unfuse2, unfuse1 = ITensors.directsum_itensors(dummy_index, to_fuse_ind, fused_ind)
-#   unfuse2 = unfuse2 * dummy_tensor
-#
-#   left_ind = only(uniqueinds(kept_inds, s))
-#   cL = combiner(left_ind)
-#   cR = combiner(fused_ind; tags=tags(fused_ind))
-#   cLind = combinedind(cL)
-#   cRind = combinedind(cR)
-#   temp_M = cL * temp_M * cR
-#   unfuse1 = unfuse1 * cR
-#   unfuse2 = unfuse2 * cR
-#
-#   Q, R, new_left_ind = qr(
-#      temp_M,
-#      uniqueinds(temp_M, cLind),
-#      tags=tags(left_ind),
-#      positive=true,
-#      dir=dir(left_ind),
-#      dilatation=sqrt(tr(H[3, 3])),
-#      full=false,
-#    );
-#    R = R * dag(cL)
-#    new_H[2, 2] = dag(unfuse1) * Q
-#    new_H[2, 1] = dag(unfuse2) * Q
-#
-#   #TODO decide whether I give R and t or a matrix?
-#   return new_H, R, t1
-# end
 
 function block_QR_for_right_canonical(H::Matrix{ITensor})
   #We verify that H is of the form
@@ -435,7 +298,7 @@ function block_QR_for_right_canonical(H::Matrix{ITensor})
 
   T = fill(ITensor(), 3, 3)
   T[1, 1] = ITensor(1); T[3, 3] = ITensor(1)
-  T[3, 1] = ITensor(0); T[1, 3] = ITensor(0)
+  T[3, 1] = ITensor(); T[1, 3] = ITensor()
   T[2, 2] = R; T[2, 1] = t1;
   left_ind = only(commoninds(R, t1));
   right_ind = only(uniqueinds(R, t1));
@@ -444,35 +307,7 @@ function block_QR_for_right_canonical(H::Matrix{ITensor})
   return new_H, T
 end
 
-# function apply_right_gauge_on_right(H::Matrix{ITensor}, R::ITensor, t::ITensor)
-#   new_H = copy(H)
-#   new_H[3, 2] = R * H[3, 2]
-#   new_H[3, 1] = t * H[3, 2] + H[3, 1]
-#   new_H[2, 2] = R * H[2, 2]
-#   new_H[2, 1] = t * H[2, 2] + H[2, 1]
-#   return new_H
-# end
-
-# function block_QR_for_right_canonical(H::InfiniteMPOMatrix)
-#   #We verify that H is of the form
-#   # 1
-#   # b  V
-#   # c  d  1
-#   new_H = CelledVector(copy(H.data.data), translator(H))
-#   Rs = ITensor[]
-#   ts = ITensor[]
-#   for j in reverse(1:nsites(H))
-#     new_H[j], R, t = block_QR_for_right_canonical(new_H[j])
-#     new_H[j - 1] = apply_right_gauge_on_right(new_H[j - 1], R, t)
-#     append!(Rs, [R])
-#     append!(ts, [t])
-#   end
-#   return InfiniteMPOMatrix(new_H),
-#   CelledVector(reverse(Rs), translator(new_H)),
-#   CelledVector(reverse(ts), translator(new_H))
-# end
-
-function block_QR_for_right_canonical(H::InfiniteMPOMatrix)
+function block_QR_for_right_canonical(H::InfiniteMPOMatrix; right_env = nothing, method = :edge_update, ψ = nothing)
   #We verify that H is of the form
   # 1
   # b  V
@@ -481,33 +316,21 @@ function block_QR_for_right_canonical(H::InfiniteMPOMatrix)
   Ts = Matrix{ITensor}[]
   for j in reverse(1:nsites(H))
     new_H[j], T = block_QR_for_right_canonical(new_H[j])
-    new_H[j - 1] = new_H[j - 1] * T
     append!(Ts, [T])
+    if !isnothing(right_env) && j == 1
+      if method == :edge_update
+        isnothing(ψ) && error("State to project not defined")
+        for k in reverse(1:nsites(H))
+          right_env = apply_mps_to_mpo_on_site(new_H[k], ψ[k]) * right_env
+        end
+        right_env = translatecell(translator(H), right_env, 1)
+      end
+    end
+    new_H[j - 1] = new_H[j - 1] * T
   end
   return InfiniteMPOMatrix(new_H),
-  CelledVector(reverse(Ts), translator(new_H))
+  CelledVector(reverse(Ts), translator(new_H)), right_env
 end
-
-# function check_convergence_right_canonical(newH, Rs, ts; tol=1e-12)
-#   for x in 1:nsites(newH)
-#     li, ri = inds(Rs[x])
-#     if li.space != ri.space
-#       return false
-#     end
-#   end
-#   for x in 1:nsites(newH)
-#     if norm(tr(newH[x][2, 1])) > tol
-#       return false
-#     end
-#   end
-#   for x in 1:nsites(newH)
-#     if norm(Rs[x] - denseblocks(δ(inds(Rs[x])...))) > tol
-#       return false
-#     end
-#   end
-#   return true
-# end
-
 
 function check_convergence_right_canonical(newH, Ts; tol=1e-12)
   for x in 1:nsites(newH)
@@ -532,52 +355,32 @@ function check_convergence_right_canonical(newH, Ts; tol=1e-12)
   return true
 end
 
-
-# function right_canonical(H; tol=1e-12, max_iter=50)
-#   l1, l2 = size(H[1])
-#   if (l1 != 3 || l2 != 3)
-#     H = make_block(H)
-#   end
-#
-#   newH, Rs, ts = block_QR_for_right_canonical(H)
-#   if check_convergence_right_canonical(newH, Rs, ts; tol)
-#     println("Right canonicalized in 1 iterations")
-#     return newH, Rs, ts
-#   end
-#   j = 1
-#   cont = true
-#   while j <= max_iter && cont
-#     newH, new_Rs, new_ts = block_QR_for_right_canonical(newH)
-#     cont = !check_convergence_right_canonical(newH, new_Rs, new_ts; tol)
-#     for j in 1:nsites(newH)
-#       ts[j] = ts[j] + Rs[j] * new_ts[j]
-#       Rs[j] = new_Rs[j] * Rs[j]
-#     end
-#     j += 1
-#   end
-#   if j == max_iter + 1 && cont
-#     println("Warning: reached max iterations before convergence")
-#   else
-#     println("Right canonicalized in $j iterations")
-#   end
-#   return newH, Rs, ts
-# end
-
-function right_canonical(H; tol=1e-12, max_iter=50)
+function right_canonical(H; tol=1e-12, max_iter=50, right_env = nothing, ψ = nothing, projection = -1,method = :edge_update)
   l1, l2 = size(H[1])
   if (l1 != 3 || l2 != 3)
     H = make_block(H)
   end
-
-  newH, Ts = block_QR_for_right_canonical(H)
+  if isnothing(right_env)
+    right_env = [ITensor(1), ITensor(commoninds(H[nsites(H)+1][2, 2], H[nsites(H)][2, 2])), ITensor(0)]
+  end
+  if method == :edge_update && isnothing(ψ)
+    projection <= 0 && error("Not enough information to fix the boundaries")
+    s = [dag(only(filterinds(inds(H[k][1, 1]), plev = 0, tags = "Site"))) for k in 1:nsites(H)]
+    ψ = [ITensor(s[k]) for k in 1:nsites(H)]
+    for k in 1:nsites(H)
+      ψ[k][projection] = 1.0
+    end
+    ψ = CelledVector(ψ, translator(H))
+  end
+  newH, Ts, right_env = block_QR_for_right_canonical(H; right_env, ψ, method)
   if check_convergence_right_canonical(newH, Ts; tol)
     println("Right canonicalized in 1 iterations")
-    return newH, Ts
+    return newH, Ts, right_env
   end
   j = 1
   cont = true
   while j <= max_iter && cont
-    newH, new_Ts = block_QR_for_right_canonical(newH)
+    newH, new_Ts, right_env = block_QR_for_right_canonical(newH; right_env, ψ, method)
     cont = !check_convergence_right_canonical(newH, new_Ts; tol)
     for j in 1:nsites(newH)
       Ts[j] =  Ts[j] * new_Ts[j]
@@ -589,49 +392,8 @@ function right_canonical(H; tol=1e-12, max_iter=50)
   else
     println("Right canonicalized in $j iterations")
   end
-  return newH, Ts
+  return newH, Ts, right_env
 end
-
-# function compress_impo(H::InfiniteMPOMatrix; kwargs...)
-#   smallH = make_block(H)
-#   HL, = left_canonical(smallH)
-#   HR, = right_canonical(HL)
-#   HL, Rs, Ts = left_canonical(HR)
-#   #At this point, we have HL[1]*Rs[1] = Rs[0] * HR[1] etc
-#   if maximum(norm.(Ts)) > 1e-12
-#     println(maximum(norm.(Ts)))
-#     error("Ts should be 0 at this point")
-#   end
-#   Us = Vector{ITensor}(undef, nsites(H))
-#   Ss = Vector{ITensor}(undef, nsites(H))
-#   Vsd = Vector{ITensor}(undef, nsites(H))
-#   for x in 1:nsites(H)
-#     Us[x], Ss[x], Vsd[x] = svd(
-#       Rs[x],
-#       commoninds(Rs[x], HL[x][2, 2]);
-#       lefttags=tags(only(commoninds(Rs[x], HL[x][2, 2]))),
-#       righttags=tags(only(commoninds(Rs[x], HR[x + 1][2, 2]))),
-#       kwargs...
-#     )
-#     #println(sum(diag(Ss[x]) .^ 2))
-#   end
-#   Us = CelledVector(Us, translator(H))
-#   Vsd = CelledVector(Vsd, translator(H))
-#   Ss = CelledVector(Ss, translator(H))
-#   newHL = copy(HL.data.data)
-#   newHR = copy(HR.data.data)
-#   for x in 1:nsites(H)
-#     ## optimizing the left canonical
-#     newHL[x][2, 1] =  dag(Us[x - 1]) * newHL[x][2, 1]
-#     newHL[x][3, 2] = newHL[x][3, 2] * Us[x]
-#     newHL[x][2, 2] = dag(Us[x - 1]) * newHL[x][2, 2] * Us[x]
-#     ## optimizing the right canonical
-#     newHR[x][2, 1] = Vsd[x - 1] * newHR[x][2, 1]
-#     newHR[x][3, 2] = newHR[x][3, 2] * dag(Vsd[x])
-#     newHR[x][2, 2] = Vsd[x - 1] * newHR[x][2, 2] * dag(Vsd[x])
-#   end
-#   return InfiniteMPOMatrix(newHL, translator(H)), InfiniteMPOMatrix(newHR, translator(H))
-# end
 
 
 function compress_impo(H::InfiniteMPOMatrix; kwargs...)
@@ -997,7 +759,12 @@ function Base.:*(A::Matrix{ITensor}, B::Matrix{ITensor})
   C = Matrix{ITensor}(undef, size(A, 1), size(B, 2))
   for i in 1:size(A, 1)
     for j in 1:size(B, 2)
-      C[i, j] = A[i, 1] * B[1, j]
+      #TODO something more resilient
+      if isempty(A[i, 1]) || isempty(B[1, j])
+        C[i, j] = ITensor(uniqueinds(A[i, 1], B[1, j])..., uniqueinds(B[1, j], A[i, 1])...)
+      else
+        C[i, j] = A[i, 1] * B[1, j]
+      end
       for k in 2:size(A, 2)
         if isempty(A[i, k]) || isempty(B[k, j])
           continue
@@ -1009,31 +776,113 @@ function Base.:*(A::Matrix{ITensor}, B::Matrix{ITensor})
   return C
 end
 
+# function Base.:*(A::Matrix{ITensor}, B::Vector{ITensor})
+#   size(A, 2) != length(B) && error("Matrix sizes are incompatible")
+#   C = Vector{ITensor}(undef, size(A, 1))
+#   for i in 1:size(A, 1)
+#     if isempty(A[i, 1]) || isempty(B[1])
+#       C[i] = ITensor(uniqueinds(A[i, size(A, 2)], B[size(A, 2)])..., uniqueinds(B[size(A, 2)], A[i, size(A, 2)])...)
+#     else
+#       C[i] = A[i, 1] * B[1]
+#     end
+#     for k in reverse(1:size(A, 2)-1)
+#       if isempty(A[i, k]) || isempty(B[k])
+#         continue
+#       end
+#       #This is due to some stuff missing in NDTensors
+#       if length(inds( C[i] ) ) == 0
+#         C[i] .+= (A[i, k] * B[k])[1]
+#       else
+#         C[i] = C[i] + A[i, k] * B[k]
+#       end
+#     end
+#   end
+#   return C
+# end
+
 function Base.:*(A::Matrix{ITensor}, B::Vector{ITensor})
   size(A, 2) != length(B) && error("Matrix sizes are incompatible")
   C = Vector{ITensor}(undef, size(A, 1))
   for i in 1:size(A, 1)
-    C[i] = A[i, 1] * B[1]
-    for k in 2:size(A, 2)
+    if isempty(A[i, size(A, 2)]) || isempty(B[size(A, 2)])
+      C[i] = ITensor(uniqueinds(A[i, size(A, 2)], B[size(A, 2)])..., uniqueinds(B[size(A, 2)], A[i, size(A, 2)])...)
+      if length(inds(C[i]))==0
+        C[i] = ITensor(0)
+      end
+    else
+      C[i] = A[i, size(A, 2)] * B[size(A, 2)]
+    end
+    for k in reverse(1:size(A, 2)-1)
       if isempty(A[i, k]) || isempty(B[k])
         continue
       end
-      C[i] = C[i] + A[i, k] * B[k]
+      #This is due to some stuff missing in NDTensors
+      if length(inds(C[i]))==0
+        temp = A[i, k] * B[k]
+        if !isempty(temp)
+          C[i] .+= temp[1]
+        end
+      else
+        C[i] = C[i] + A[i, k] * B[k]
+      end
     end
   end
   return C
 end
 
+# function Base.:*(A::Vector{ITensor}, B::Matrix{ITensor})
+#   length(A) != size(B, 1) && error("Matrix sizes are incompatible")
+#   C = Vector{ITensor}(undef, size(B, 2))
+#   for j in 1:size(B, 2)
+#     if isempty(A[1]) || isempty(B[1, j])
+#       C[j] = ITensor(uniqueinds(A[1], B[1, j])..., uniqueinds(B[1, j], A[1])...)
+#       if length(inds( C[j] ) ) == 0
+#         C[j] = ITensor(0)
+#       end
+#     else
+#       C[j] = A[1] * B[1, j]
+#     end
+#     for k in 2:size(B, 1)
+#       if isempty(A[k]) || isempty(B[k, j])
+#         continue
+#       end
+#       if length(inds( C[j] ) ) == 0
+#         temp = A[k] * B[k, j]
+#         if !isempty(temp) && !iszero(temp)
+#           C[j] .+= temp[1]
+#         end
+#       else
+#         C[j] = C[j] + A[k] * B[k, j]
+#       end
+#     end
+#   end
+#   return C
+# end
+
 function Base.:*(A::Vector{ITensor}, B::Matrix{ITensor})
   length(A) != size(B, 1) && error("Matrix sizes are incompatible")
   C = Vector{ITensor}(undef, size(B, 2))
   for j in 1:size(B, 2)
-    C[j] = A[1] * B[1, j]
+    if isempty(A[1]) || isempty(B[1, j])
+      C[j] = ITensor(uniqueinds(A[1], B[1, j])..., uniqueinds(B[1, j], A[1])...)
+      if length(dims(C[j]))==0
+        C[j] = ITensor(0)
+      end
+    else
+      C[j] = A[1] * B[1, j]
+    end
     for k in 2:size(B, 1)
       if isempty(A[k]) || isempty(B[k, j])
         continue
       end
-      C[j] = C[j] + A[k] * B[k, j]
+      if length(inds(C[j]))==0
+        temp = A[k] * B[k, j]
+        if !isempty(temp)
+          C[j] .+= temp[1]
+        end
+      else
+        C[j] = C[j] + A[k] * B[k, j]
+      end
     end
   end
   return C
