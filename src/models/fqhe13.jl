@@ -306,16 +306,10 @@ function optimize_coefficients(coeff::Dict; prec=1e-12)
     if abs(v) < prec
       continue
     end
-    if length(ke) == 4
-      name = ["Cdag", "Cdag", "C", "C"]
-    elseif length(ke) == 6
-      name = ["Cdag", "Cdag", "Cdag", "C", "C", "C"]
-    elseif length(ke) == 8
-      name = ["Cdag", "Cdag", "Cdag", "Cdag", "C", "C", "C", "C"]
-    else
-      println("Optimization not implemented")
-      continue
+    if mod(length(ke), 2) == 1
+      error("Odd number of operators is not implemented")
     end
+    name = vcat(fill("Cdag", length(ke)÷2), fill("C", length(ke)÷2))
     k = Base.copy(ke)
     sg = get_perm!(k, name)
     filter_op!(k, name)

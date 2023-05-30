@@ -266,7 +266,7 @@ function idmrg_step_with_noise_auxiliary(iDM::iDMRGStructure{InfiniteMPO,ITensor
     left_indices = commoninds(theta, iDM.ψ.AL[start] )
     newtags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start + 1])))
 
-    if α != 0
+    if false #α != 0
       if H_extension == iDM.Hmpo
         env = current_L
       else

@@ -204,9 +204,6 @@ function left_canonical(H; tol=1e-12, max_iter=50, left_env = nothing, ψ = noth
   if (l1 != 3 || l2 != 3)
     H = make_block(H)
   end
-  if isnothing(left_env)
-    left_env = [ITensor(0), ITensor(commoninds(H[0][2, 2], H[1][2, 2])), ITensor(1)]
-  end
   if method == :edge_update && isnothing(ψ)
     projection <= 0 && error("Not enough information to fix the boundaries")
     s = [dag(only(filterinds(inds(H[k][1, 1]), plev = 0, tags = "Site"))) for k in 1:nsites(H)]
@@ -215,6 +212,14 @@ function left_canonical(H; tol=1e-12, max_iter=50, left_env = nothing, ψ = noth
       ψ[k][projection] = 1.0
     end
     ψ = CelledVector(ψ, translator(H))
+  end
+  if isnothing(left_env)
+    left_ind = commoninds(ψ[0], ψ[1])
+    if length(left_ind) == 0
+      left_env = [ITensor(0), ITensor(commoninds(H[0][2, 2], H[1][2, 2])), ITensor(1)]
+    else
+      left_env = [ITensor(0, (left_ind, dag(prime(left_ind)))), ITensor(commoninds(H[0][2, 2], H[1][2, 2])..., left_ind, dag(prime(left_ind))), ITensor(1, left_ind, dag(prime(left_ind)))]
+    end
   end
   #newH, Rs, ts, left_env = block_QR_for_left_canonical(H, left_env)
   newH, Ts, left_env = block_QR_for_left_canonical(H; left_env, ψ, method )
@@ -366,9 +371,7 @@ function right_canonical(H; tol=1e-12, max_iter=50, right_env = nothing, ψ = no
   if (l1 != 3 || l2 != 3)
     H = make_block(H)
   end
-  if isnothing(right_env)
-    right_env = [ITensor(1), ITensor(commoninds(H[nsites(H)+1][2, 2], H[nsites(H)][2, 2])), ITensor(0)]
-  end
+
   if method == :edge_update && isnothing(ψ)
     projection <= 0 && error("Not enough information to fix the boundaries")
     s = [dag(only(filterinds(inds(H[k][1, 1]), plev = 0, tags = "Site"))) for k in 1:nsites(H)]
@@ -377,6 +380,17 @@ function right_canonical(H; tol=1e-12, max_iter=50, right_env = nothing, ψ = no
       ψ[k][projection] = 1.0
     end
     ψ = CelledVector(ψ, translator(H))
+  end
+  if typeof(ψ) == InfiniteCanonicalMPS
+    ψ = ψ.AR
+  end
+  if isnothing(right_env)
+    right_ind = commoninds(ψ[nsites(H)+1], ψ[nsites(H)])
+    if length(right_ind) == 0
+      right_env = [ITensor(1), ITensor(commoninds(H[nsites(H)+1][2, 2], H[nsites(H)][2, 2])), ITensor(0)]
+    else
+      right_env = [ITensor(1, right_ind, dag(prime(right_ind))), ITensor(commoninds(H[nsites(H)+1][2, 2], H[nsites(H)][2, 2])..., right_ind, dag(prime(right_ind))), ITensor(0, right_ind, dag(prime(right_ind)))]
+    end
   end
   newH, Ts, right_env = block_QR_for_right_canonical(H; right_env, ψ, method)
   if check_convergence_right_canonical(newH, Ts; tol)
