@@ -308,14 +308,19 @@ function ent_spec(psi::InfiniteCanonicalMPS)
   for x in 1:n
     localC = psi.C[x]
     if isdiag(localC)
-      println("Blah")
-      append!(ent_spec, [localC])
+      S = localC
+      index_S = only(commoninds(psi.C[x], psi.AL[x]))
     else
       linkl = only(commoninds(psi.C[x], psi.AL[x]))
       U, S, V = svd(localC, [linkl])
-      append!(ent_spec, [S])
+      index_S = only(commoninds(S, U))
     end
-  end
+      temp = Dict{typeof(index_S.space[1][1]), Vector{Float64}}()
+      for (idx, sp) in enumerate(index_S.space)
+          temp[sp[1]] = diag(S[Block(idx, idx)])
+      end
+      append!(ent_spec, [temp])
+    end
   return ent_spec
 end
 
@@ -363,4 +368,29 @@ function check_canonical_form(ψ::InfiniteCanonicalMPS; tol = 1e-12)
       println("Broken translation invariance with a norm of $temp at site $j")
     end
   end
+  for j in 1:N
+    rlink = only(commoninds(ψ.AL[j], ψ.AL[j+1]))
+    temp = norm(ψ.AL[j] * dag(prime(ψ.AL[j], rlink)) - denseblocks(δ(rlink, dag(prime(rlink))))  )
+    if temp > tol
+      println("Broken unitarity of $temp for AL at site $j")
+      println((ψ.AL[j] * dag(prime(ψ.AL[j], rlink))).tensor)
+    end
+  end
+  for j in 1:N
+    llink = only(commoninds(ψ.AR[j], ψ.AR[j-1]))
+    temp = norm(ψ.AR[j] * dag(prime(ψ.AR[j], llink)) - denseblocks(δ(llink, dag(prime(llink))))  )
+    if temp > tol
+      println("Broken unitarity of $temp for AR at site $j")
+    end
+  end
+end
+
+
+function check_unitarity(A::ITensor, link::Index; tol = 1e-10)
+  temp = norm(A * dag(prime(A, link)) - denseblocks(δ(link, dag(prime(link))))  )
+  if temp > tol
+    println("Broken unitarity of $temp")
+    return false
+  end
+  return true
 end

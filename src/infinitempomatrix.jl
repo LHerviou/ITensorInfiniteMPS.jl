@@ -463,16 +463,19 @@ end
 # end
 
 
-function compress_impo(H::InfiniteMPOMatrix; kwargs...)
+function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = nothing, kwargs...)
   split_blocks = get(kwargs, :splitblocks, true)
   tol = get(kwargs, :tol, 1e-12)
 
   smallH = make_block(H)
-  HL, Tl1, L = left_canonical(smallH; kwargs...)
-  HR, Tr1, Rr = right_canonical(HL; kwargs...)
+  HL, Tl1, L = left_canonical(smallH; left_env, kwargs...)
+  if !isnothing(right_env)
+    right_env = Tl1[nsites(H)] * right_env
+  end
+  HR, Tr1, Rr = right_canonical(HL; right_env, kwargs...)
   Lr = L * Tr1[1]
   left_env = deepcopy(Lr)
-  HL, Ts, Ll = left_canonical(HR; kwargs... )
+  HL, Ts, Ll = left_canonical(HR; left_env, kwargs... )
   Rl = Ts[nsites(HR)] * Rr
   #At this point, we hav<e HL[1]*Rs[1] = Rs[0] * HR[1] etc
   test_norm = maximum([norm(Ts[x][3, 2]) for x in 1:nsites(H)])

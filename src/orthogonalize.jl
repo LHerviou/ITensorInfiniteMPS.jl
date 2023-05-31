@@ -121,9 +121,9 @@ function ortho_overlap(AC, C)
   return noprime(AL)
 end
 
-function ortho_polar(AC, C::ITensor)
-  UAC, _ = polar(AC, uniqueinds(AC, C))
-  UC, _ = polar(C, commoninds(C, AC))
+function ortho_polar(AC, C::ITensor; kwargs...)
+  UAC, _ = polar(AC, uniqueinds(AC, C); kwargs...)
+  UC, _ = polar(C, commoninds(C, AC); kwargs...)
   return noprime(UAC) * noprime(dag(UC))
 end
 
@@ -214,3 +214,27 @@ function ITensors.truncate!(psi::InfiniteCanonicalMPS; kwargs...)
     psi.AL[j+1] = temp_L
   end
 end
+
+
+# function alternate_polar(A::ITensor, Linds...; kwargs...)
+#   Q, R = qr(A, Linds...; full = false, kwargs...)
+#   q = commoninds(Q, R)
+#   r = uniqueinds(R, Q)
+#   replaceinds!(Q, q=>r)
+#   R = prime(R, r)
+#   replaceinds!(R, dag(q)=>dag(r))
+#   return Q, R, r
+# end
+
+# function mypolar(A::ITensor, Linds...; kwargs...)
+#   U, S, V = svd(A, Linds...; kwargs...)
+#   println("Polar")
+#   println(size(U))
+#   println(size(S))
+#   u = commoninds(S, U)
+#   v = commoninds(S, V)
+#   δᵤᵥ′ = δ(u..., v'...)
+#   Q = U * δᵤᵥ′ * V'
+#   P = dag(V') * dag(δᵤᵥ′) * S * V
+#   return Q, P, commoninds(Q, P)
+# end
