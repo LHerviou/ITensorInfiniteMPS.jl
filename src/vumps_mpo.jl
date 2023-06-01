@@ -35,16 +35,16 @@ function apply_local_left_transfer_matrix(
   ψ′ = dag(ψ)'
 
   Ltarget = Vector{ITensor}(undef, size(H[n_1])[1])
+  mps_link = only(commoninds(ψ.AL[n_1], ψ.AL[n_1+1]))
+  mps_link_dp = dag(prime(mps_link))
+  for j in 1:length(Ltarget)
+    mpo_link = commoninds(H[n_1][j, j], H[n_1+1][j, j]) #Can be 1 or 0
+    Ltarget[j] = ITensor(mps_link, mps_link_dp, mpo_link...)
+  end
   for j in 1:dₕ
-    init = false
     for k in reverse(j:dₕ)
       if !isempty(H[n_1][k, j]) && isassigned(Lstart, k) && !isempty(Lstart[k])
-        if isassigned(Ltarget, j) && init
-          Ltarget[j] += Lstart[k] * ψ.AL[n_1] * ψ′.AL[n_1] * H[n_1][k, j]
-        else
-          Ltarget[j] = Lstart[k] * ψ.AL[n_1] * ψ′.AL[n_1] * H[n_1][k, j]
-          init = true
-        end
+        Ltarget[j] += Lstart[k] * ψ.AL[n_1] * ψ′.AL[n_1] * H[n_1][k, j]
       end
     end
   end
@@ -61,6 +61,12 @@ function apply_local_left_transfer_matrix(
   reset=true,
 )
   Ltarget = Vector{ITensor}(undef, size(H[n_1])[1])
+  mps_link = only(commoninds(ψ.AL[n_1], ψ.AL[n_1+1]))
+  mps_link_dp = dag(prime(mps_link))
+  for j in 1:length(Ltarget)
+    mpo_link = commoninds(H[n_1][j, j], H[n_1+1][j, j])
+    Ltarget[j] = ITensor(mps_link, mps_link_dp, mpo_link...)
+  end
   for j in 1:m
     if !isempty(H[n_1][m, j])
       Ltarget[j] = Lstart * ψ.AL[n_1] * H[n_1][m, j] * dag(prime(ψ.AL[n_1]))
@@ -110,13 +116,13 @@ function left_environment(H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS; tol=1e
       translatecell(translator(ψ), Ls[1][n + 1], -1), n + 1, H, ψ, 2 - N
     )
     for j in 1:n
-      if isassigned(temp_Ls, j)
+      #if isassigned(temp_Ls, j) #Normally not needed
         if isassigned(Ls[1], j)
           Ls[1][j] += temp_Ls[j]
         else
           Ls[1][j] = temp_Ls[j]
         end
-      end
+      #end
     end
     if !isempty(H[1][n, n])
       λ = H[1][n, n][1, 1]
@@ -198,16 +204,17 @@ function apply_local_right_transfer_matrix(
   dₕ = length(Lstart)
   ψ′ = dag(ψ)'
   Ltarget = Vector{ITensor}(undef, size(H[n_1])[1])
+  mps_link = only(commoninds(ψ.AR[n_1], ψ.AR[n_1-1]))
+  mps_link_dp = dag(prime(mps_link))
+  for j in 1:length(Ltarget)
+    mpo_link = commoninds(H[n_1][j, j], H[n_1-1][j, j])
+    Ltarget[j] = ITensor(mps_link, mps_link_dp, mpo_link...)
+  end
   for j in reverse(1:dₕ)
     init = false
     for k in reverse(1:j)
       if !isempty(H[n_1][j, k]) && isassigned(Lstart, k) && !isempty(Lstart[k])
-        if isassigned(Ltarget, j) && init
-          Ltarget[j] += Lstart[k] * ψ.AR[n_1] * H[n_1][j, k] * ψ′.AR[n_1]
-        else
-          Ltarget[j] = Lstart[k] * ψ.AR[n_1] * H[n_1][j, k] * ψ′.AR[n_1]
-          init = true
-        end
+        Ltarget[j] += Lstart[k] * ψ.AR[n_1] * H[n_1][j, k] * ψ′.AR[n_1]
       end
     end
   end
@@ -225,7 +232,13 @@ function apply_local_right_transfer_matrix(
 )
   dₕ = size(H[n_1])[1]
   ψ′ = dag(prime(ψ.AR[n_1]))
-  Ltarget = Vector{ITensor}(undef, dₕ)
+  Ltarget = Vector{ITensor}(undef, size(H[n_1])[1])
+  mps_link = only(commoninds(ψ.AR[n_1], ψ.AR[n_1-1]))
+  mps_link_dp = dag(prime(mps_link))
+  for j in 1:length(Ltarget)
+    mpo_link = commoninds(H[n_1][j, j], H[n_1-1][j, j])
+    Ltarget[j] = ITensor(mps_link, mps_link_dp, mpo_link...)
+  end
   for j in m:dₕ
     if !isempty(H[n_1][j, m])
       Ltarget[j] = Lstart * ψ.AR[n_1] * H[n_1][j, m] * ψ′ #TODO optimize
@@ -338,7 +351,7 @@ function (H::H¹)(x)
   result = ITensor(prime(inds(x)))
   for i in 1:dₕ
     for j in 1:dₕ
-      if !isempty(T[i, j])
+      if !isempty(T[i, j]) && !isempty(L[i]) && !isempty(R[j])
         result += L[i] * x * T[i, j] * R[j]
       end
     end

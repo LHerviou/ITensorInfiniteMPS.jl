@@ -379,10 +379,12 @@ function idmrg(
   mixer=false,
   ener_tol=0,
   α=0.001,
+  measure_entropies = false,
   kwargs...,
 )
   eners = Float64[]
   errs = Float64[]
+  entrs = Float64[]
   ener = 0
   err = 0
   for j in 1:nb_iterations
@@ -393,10 +395,13 @@ function idmrg(
     end
     append!(eners, ener)
     append!(errs, err)
+    if measure_entropies
+      append!(entrs, sum(entropies(iDM.ψ)) / nsites(iDM) )
+    end
     if j > 5
       if maximum([abs(eners[end - j + 1] - eners[end - j]) for j in 1:5]) < ener_tol
         println("Early finish")
-        return eners, errs
+        return eners, errs, entrs
       end
     end
 
@@ -406,7 +411,7 @@ function idmrg(
       flush(stderr)
     end
   end
-  return eners, errs
+  return eners, errs, entrs
 end
 
 function test_validity_imps(ψ::InfiniteCanonicalMPS; prec=1e-8)

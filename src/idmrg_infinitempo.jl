@@ -59,6 +59,13 @@ function (H::temporaryHamiltonian{InfiniteMPO,ITensor})(x)
   L = H.effectiveL
   R = H.effectiveR
   start = H.nref
+  if n == 2
+    ITensors.enable_contraction_sequence_optimization()
+    #return noprime(contract(L, x, H.Hmpo[start], H.Hmpo[start + 1], R; sequence = :automatic) )
+    temp = L * x * H.Hmpo[start] * H.Hmpo[start + 1] * R
+    ITensors.disable_contraction_sequence_optimization()
+    return noprime(temp)
+  end
   L = L * x
   for j in 0:(n - 1)
     L = apply_mpomatrix_left(L, H.Hmpo[start + j])
@@ -862,7 +869,7 @@ end
 
 #using TickTock
 
-function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMPO,ITensor};solver_tol=1e-8, maxdim=20, cutoff=1e-10, α = 1e-6, kwargs...)
+function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMPO,ITensor}; solver_tol=1e-8, maxdim=20, cutoff=1e-10, α = 1e-6, kwargs...)
   N = nsites(iDM)
   original_start = mod1(iDM.counter, N)
   mid_chain = N ÷ 2
@@ -873,7 +880,8 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
   s = siteinds(only, iDM.ψ)
 
 
-
+  issymmetric = get(kwargs, :issymmetric, true)
+  eager = get(kwargs, :eager, true)
   H_extension = get(kwargs, :MPO_extension, iDM.Hmpo)
   maxdim_subspace = get(kwargs, :maxdim_subspace, maxdim)
 
@@ -896,17 +904,17 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
   for (count, start) in enumerate(original_start:original_start+mid_chain-1)
     #build the local tensor start .... start + nb_site - 1
     starting_state = iDM.ψ.C[start-1] * iDM.ψ.AR[start] * iDM.ψ.AR[start + 1]
-    if α != 0
-      starting_state += max(α, 1e-6) * randomITensor(inds(starting_state)) #ensures that every sector has some non zero elements
-    end
+    #if α != 0
+    #  starting_state += max(α, 1e-6) * randomITensor(inds(starting_state)) #ensures that every sector has some non zero elements
+    #end
     #build_local_Hamiltonian
     temp_H = temporaryHamiltonian{InfiniteMPO,ITensor}(
     current_L, effective_Rs[count], iDM.Hmpo, start
     )
     local_ener, new_x, info = eigsolve(
-    temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol
+    temp_H, starting_state, 1, :SR; issymmetric, ishermitian = true, tol=solver_tol, eager
     )
-    println(info)
+    #println(info)
     theta = new_x[1]
     #left_indices = commoninds(theta, iDM.ψ.AL[start] )
     left_indices = [only(commoninds(theta,  iDM.ψ.C[start-1] )) , s[start]]
@@ -927,20 +935,7 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
       end
       U2, S2, V2 = subspace_expansion(theta, env, H_extension, (start, start+1); maxdim, cutoff, newtags, α, svd_indices = left_indices)
       S2 = ITensors.denseblocks(S2)
-      if false #count == mid_chain# || count == 1
-        if H_extension == iDM.Hmpo
-            env = effective_Rs[count]
-        else
-         right_link = dag(only(uniqueinds(right_indices, s[start+1])))
-         right_link_mpo = only(commoninds(H_extension[start+2], H_extension[start+1]))
-         env = randomITensor(right_link, dag(prime(right_link)), right_link_mpo)
-       end
-       V2, _, _ = subspace_expansion(theta, env, H_extension, (start+1, start); maxdim, cutoff, newtags, α, svd_indices = right_indices)
-       S2 = ITensors.dropzeros(dag(U2) * theta * dag(V2))
-       #S2 = S2 + 1e-5 * randomITensor(inds(S2))
-     end
     else
-      println("Blah")
       U2, S2, V2 = svd(
       theta,
       left_indices;
@@ -983,17 +978,16 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
   for (count, start) in reverse(collect(enumerate(original_start+mid_chain-1:original_start+N-2)))
     #build the local tensor start .... start + nb_site - 1
     starting_state = iDM.ψ.AL[start] * iDM.ψ.AL[start + 1] * iDM.ψ.C[start+1]
-    if α != 0
-      starting_state += max(α, 1e-6) * randomITensor(inds(starting_state)) #ensures that every sector has some non zero elements
-    end
+    #if α != 0
+    #  starting_state += max(α, 1e-6) * randomITensor(inds(starting_state)) #ensures that every sector has some non zero elements
+    #end
     #build_local_Hamiltonian
     temp_H = temporaryHamiltonian{InfiniteMPO,ITensor}(
     effective_Ls[count], current_R, iDM.Hmpo, start
     )
     local_ener, new_x = eigsolve(
-    temp_H, starting_state, 1, :SR; ishermitian=true, tol=solver_tol
+    temp_H, starting_state, 1, :SR;  issymmetric, ishermitian = true, tol=solver_tol, eager
     )
-
     theta = new_x[1]
     #left_indices = commoninds(theta, iDM.ψ.AL[start] )
     left_indices = commoninds(theta,  iDM.ψ.AL[start])
@@ -1017,18 +1011,15 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
         if H_extension == iDM.Hmpo
           env = effective_Ls[count]
         else
-          #left_link = only(commoninds(iDM.ψ.AL[start-1], iDM.ψ.AL[start]))
-          left_link = dag(left_indices[1])
+          left_link = only(commoninds(iDM.ψ.AL[start-1], iDM.ψ.AL[start]))
+          #left_link = dag(left_indices[1])
           left_link_mpo = only(commoninds(H_extension[start-1], H_extension[start]))
           env = randomITensor(left_link, dag(prime(left_link)), left_link_mpo)
         end
         U2, _, _ = subspace_expansion(theta, env, H_extension, (start, start+1); maxdim, cutoff, newtags, α, svd_indices = left_indices)
-        #S2 = ITensors.denseblocks(S2)
         S2 = ITensors.dropzeros(dag(U2) * theta * dag(V2))
       end
-       #S2 = S2 + 1e-5 * randomITensor(inds(S2))
     else
-      println("Blah")
       U2, S2, V2 = svd(
       theta,
       left_indices;
