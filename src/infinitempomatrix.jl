@@ -523,7 +523,7 @@ function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = not
   right_env_LC = deepcopy(Rl); right_env_LC[2] = dag(Us[nsites(H)]) * right_env_LC[2];
   left_env_RC = deepcopy(Lr); left_env_RC[2] = left_env_RC[2] * dag(Vsd[0]);
   right_env_RC = deepcopy(Rr); right_env_RC[2] = Vsd[nsites(H)] * right_env_RC[2];
-  return (InfiniteMPOMatrix(newHL, translator(H)), left_env_LC, right_env_LC), (InfiniteMPOMatrix(newHR, translator(H)), left_env_RC, right_env_RC)
+  return (InfiniteMPOMatrix(newHL, translator(H)), left_env_LC, right_env_LC), (InfiniteMPOMatrix(newHR, translator(H)), left_env_RC, right_env_RC), Ss
 end
 
 function make_block(H::InfiniteMPOMatrix)
