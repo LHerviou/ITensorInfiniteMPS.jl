@@ -526,12 +526,13 @@ function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = not
   return (InfiniteMPOMatrix(newHL, translator(H)), left_env_LC, right_env_LC), (InfiniteMPOMatrix(newHR, translator(H)), left_env_RC, right_env_RC), Ss
 end
 
+#RETIRED
 function make_block(H::InfiniteMPOMatrix)
   if size(H[1]) == (3, 3)
     println("Nothing to do")
     return H
   end
-  H = make_dummy_indices_explicit(H)
+  #H = make_dummy_indices_explicit(H)
   lx, ly = size(H[1])
   # novel forn
   # 1
