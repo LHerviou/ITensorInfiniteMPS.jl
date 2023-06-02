@@ -869,10 +869,16 @@ end
 
 #using TickTock
 
-function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMPO,ITensor}; solver_tol=1e-8, maxdim=20, cutoff=1e-10, α = 1e-6, kwargs...)
+function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMPO,ITensor}; solver_tol=1e-8, maxdim=20, cutoff=1e-10, α = 0., kwargs...)
+  issymmetric = get(kwargs, :issymmetric, true)
+  eager = get(kwargs, :eager, true)
+  H_extension = get(kwargs, :MPO_extension, iDM.Hmpo)
+
   N = nsites(iDM)
+  mid_chain = get(kwargs, :mid_chain, div(N, 2))
+
+
   original_start = mod1(iDM.counter, N)
-  mid_chain = N ÷ 2
   effective_Rs = [copy(iDM.R) for j in 1:mid_chain]
   effective_Ls = ITensor[]
   local_ener = 0
@@ -880,10 +886,6 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
   s = siteinds(only, iDM.ψ)
 
 
-  issymmetric = get(kwargs, :issymmetric, true)
-  eager = get(kwargs, :eager, true)
-  H_extension = get(kwargs, :MPO_extension, iDM.Hmpo)
-  maxdim_subspace = get(kwargs, :maxdim_subspace, maxdim)
 
   #Building successive environments
   site_looked = original_start + N - 1
@@ -1060,7 +1062,7 @@ function idmrg_step_with_noise(
 )
   N = nsites(iDM)
   nb_site = iDM.dmrg_sites
-  mid_chain = N÷2
+  mid_chain = get(kwargs, :mid_chain, N÷2)
   if nb_site != 2
     error("For now, we assume 2 site DMRG for the noise")
   end
@@ -1079,12 +1081,13 @@ function idmrg_step_with_noise(
   tempL[1] = 1.0
   iDM.L -= local_ener[1] * δ(uniqueinds(iDM.L, iDM.Hmpo[original_start+mid_chain-1])...) * tempL
 
-  if original_start + N ÷ 2 >= N + 1
+  if original_start + mid_chain >= N + 1
     iDM.L = translatecell(translator(iDM), iDM.L, -1)
   else
     iDM.R = translatecell(translator(iDM), iDM.R, 1)
   end
   #local_ener, err, currentR = idmrg_step_with_noise_auxiliary_movingright(iDM; solver_tol, maxdim, cutoff, α, kwargs...)
-  iDM.counter += N ÷ 2
+  iDM.counter += mid_chain #N ÷ 2
+  #println(iDM.counter)
   return local_ener[1] / N , err
 end

@@ -468,7 +468,26 @@ function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = not
   tol = get(kwargs, :tol, 1e-12)
 
   smallH = make_block(H)
+  if !isnothing(left_env)
+    if length(left_env)>3
+      links = [only(commoninds(left_env[j], H[1][j, j])) for j in 2:length(left_env)-1]
+      temp, new_ind = directsum([left_env[j]=>links[j-1] for j in 2:length(left_env)-1]...,   tags = tags(links[1]) )
+      replaceind!(temp, new_ind => only(commoninds(smallH[0][2, 2], smallH[1][2, 2])) )
+      new_left_env = [left_env[1], temp, left_env[end]]
+      left_env = new_left_env
+    end
+  end
+  if !isnothing(right_env)
+    if length(right_env)>3
+      links = [only(commoninds(right_env[j], H[nsites(H)][j, j])) for j in 2:length(right_env)-1]
+      temp, new_ind = directsum([right_env[j]=>links[j-1] for j in 2:length(right_env)-1]...,   tags = tags(links[1]) )
+      replaceind!(temp, new_ind => only(commoninds(smallH[nsites(H)+1][2, 2], smallH[nsites(H)][2, 2])) )
+      new_right_env = [right_env[1], temp, right_env[end]]
+      right_env = new_right_env
+    end
+  end
   HL, Tl1, L = left_canonical(smallH; left_env, kwargs...)
+
   if !isnothing(right_env)
     right_env = Tl1[nsites(H)] * right_env
   end

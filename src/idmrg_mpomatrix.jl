@@ -391,7 +391,9 @@ function idmrg(
     if !mixer
       ener, err = idmrg_step(iDM; kwargs...)
     else
-       ener, err = idmrg_step_with_noise(iDM; α = α, kwargs...)
+      mid_chain = get(kwargs, :mid_chain, nsites(iDM)÷2) #TODO think if this is the best way
+      ener, err = idmrg_step_with_noise(iDM; α = α, mid_chain,  kwargs...)
+      ener, err = idmrg_step_with_noise(iDM; α = α, kwargs..., mid_chain = nsites(iDM)-mid_chain)
     end
     append!(eners, ener)
     append!(errs, err)
