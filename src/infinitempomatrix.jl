@@ -52,8 +52,7 @@ function InfiniteMPOMatrix(data::CelledVector{Matrix{ITensor}})
 end
 
 function ITensors.siteinds(A::InfiniteMPOMatrix)
-  return [dag(only(filterinds(A[x][1, 1], plev = 0, tags = "Site"))) for x in 1:nsites(A)]
-
+  return CelledVector([dag(only(filterinds(A[x][1, 1], plev = 0, tags = "Site"))) for x in 1:nsites(A)], translator(A))
 end
 
 
