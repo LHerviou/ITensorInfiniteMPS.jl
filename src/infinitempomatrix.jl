@@ -414,54 +414,6 @@ function right_canonical(H; tol=1e-12, max_iter=50, right_env = nothing, ψ = no
   return newH, Ts, right_env
 end
 
-
-# function compress_impo(H::InfiniteMPOMatrix; kwargs...)
-#   smallH = make_block(H)
-#   HL, = left_canonical(smallH)
-#   HR, = right_canonical(HL)
-#   HL, Ts = left_canonical(HR)
-#   #At this point, we hav<e HL[1]*Rs[1] = Rs[0] * HR[1] etc
-#   test_norm = maximum([norm(Ts[x][3, 2]) for x in 1:nsites(H)])
-#   if  test_norm> 1e-12
-#     error("Ts should be 0 at this point, instead it is $test_norm")
-#   end
-#   #TODO ? replace this by matrix formmulation?
-#   Us = Vector{ITensor}(undef, nsites(H))
-#   Ss = Vector{ITensor}(undef, nsites(H))
-#   Vsd = Vector{ITensor}(undef, nsites(H))
-#   for x in 1:nsites(H)
-#     Us[x], Ss[x], Vsd[x] = svd(
-#       Ts[x][2, 2],
-#       commoninds(Ts[x][2, 2], HL[x][2, 2]);
-#       lefttags=tags(only(commoninds(Ts[x][2, 2], HL[x][2, 2]))),
-#       righttags=tags(only(commoninds(Ts[x][2, 2], HR[x + 1][2, 2]))),
-#       kwargs...
-#     )
-#     #println(sum(diag(Ss[x]) .^ 2))
-#   end
-#   Us = CelledVector(Us, translator(H))
-#   Vsd = CelledVector(Vsd, translator(H))
-#   Ss = CelledVector(Ss, translator(H))
-#   newHL = copy(HL.data.data)
-#   newHR = copy(HR.data.data)
-#   for x in 1:nsites(H)
-#     ## optimizing the left canonical
-#     newHL[x][2, 1] =  dag(Us[x - 1]) * newHL[x][2, 1]
-#     newHL[x][3, 2] = newHL[x][3, 2] * Us[x]
-#     newHL[x][2, 2] = dag(Us[x - 1]) * newHL[x][2, 2] * Us[x]
-#     newHL[x][1, 2] = ITensor(commoninds(newHL[x][2, 2], newHL[x][3, 2]))
-#     newHL[x][2, 3] = ITensor(commoninds(newHL[x][2, 2], newHL[x][2, 1]))
-#     ## optimizing the right canonical
-#     newHR[x][2, 1] = Vsd[x - 1] * newHR[x][2, 1]
-#     newHR[x][3, 2] = newHR[x][3, 2] * dag(Vsd[x])
-#     newHR[x][2, 2] = Vsd[x - 1] * newHR[x][2, 2] * dag(Vsd[x])
-#     newHR[x][1, 2] = ITensor(commoninds(newHR[x][2, 2], newHR[x][3, 2]) )
-#     newHR[x][2, 3] = ITensor(commoninds(newHR[x][2, 2], newHR[x][2, 1]) )
-#   end
-#   return InfiniteMPOMatrix(newHL, translator(H)), InfiniteMPOMatrix(newHR, translator(H))
-# end
-
-
 function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = nothing, kwargs...)
   split_blocks = get(kwargs, :splitblocks, true)
   tol = get(kwargs, :tol, 1e-12)
@@ -878,30 +830,6 @@ function Base.:*(A::Matrix{ITensor}, B::Matrix{ITensor})
   return C
 end
 
-# function Base.:*(A::Matrix{ITensor}, B::Vector{ITensor})
-#   size(A, 2) != length(B) && error("Matrix sizes are incompatible")
-#   C = Vector{ITensor}(undef, size(A, 1))
-#   for i in 1:size(A, 1)
-#     if isempty(A[i, 1]) || isempty(B[1])
-#       C[i] = ITensor(uniqueinds(A[i, size(A, 2)], B[size(A, 2)])..., uniqueinds(B[size(A, 2)], A[i, size(A, 2)])...)
-#     else
-#       C[i] = A[i, 1] * B[1]
-#     end
-#     for k in reverse(1:size(A, 2)-1)
-#       if isempty(A[i, k]) || isempty(B[k])
-#         continue
-#       end
-#       #This is due to some stuff missing in NDTensors
-#       if length(inds( C[i] ) ) == 0
-#         C[i] .+= (A[i, k] * B[k])[1]
-#       else
-#         C[i] = C[i] + A[i, k] * B[k]
-#       end
-#     end
-#   end
-#   return C
-# end
-
 function Base.:*(A::Matrix{ITensor}, B::Vector{ITensor})
   size(A, 2) != length(B) && error("Matrix sizes are incompatible")
   C = Vector{ITensor}(undef, size(A, 1))
@@ -931,35 +859,6 @@ function Base.:*(A::Matrix{ITensor}, B::Vector{ITensor})
   end
   return C
 end
-
-# function Base.:*(A::Vector{ITensor}, B::Matrix{ITensor})
-#   length(A) != size(B, 1) && error("Matrix sizes are incompatible")
-#   C = Vector{ITensor}(undef, size(B, 2))
-#   for j in 1:size(B, 2)
-#     if isempty(A[1]) || isempty(B[1, j])
-#       C[j] = ITensor(uniqueinds(A[1], B[1, j])..., uniqueinds(B[1, j], A[1])...)
-#       if length(inds( C[j] ) ) == 0
-#         C[j] = ITensor(0)
-#       end
-#     else
-#       C[j] = A[1] * B[1, j]
-#     end
-#     for k in 2:size(B, 1)
-#       if isempty(A[k]) || isempty(B[k, j])
-#         continue
-#       end
-#       if length(inds( C[j] ) ) == 0
-#         temp = A[k] * B[k, j]
-#         if !isempty(temp) && !iszero(temp)
-#           C[j] .+= temp[1]
-#         end
-#       else
-#         C[j] = C[j] + A[k] * B[k, j]
-#       end
-#     end
-#   end
-#   return C
-# end
 
 function Base.:*(A::Vector{ITensor}, B::Matrix{ITensor})
   length(A) != size(B, 1) && error("Matrix sizes are incompatible")
@@ -1073,52 +972,3 @@ function Base.:+(A::InfiniteMPOMatrix, B::InfiniteMPOMatrix)
   #return new_MPOMatrices
   return InfiniteMPOMatrix(new_MPOMatrices, translator(A))
 end
-
-
-#
-# function Base.:+(A::InfiniteMPOMatrix, B::InfiniteMPOMatrix)
-#   #Asserts
-#   nsites(A) != nsites(B) && error("The two MPOs have different lengths, not implemented")
-#   N = nsites(A)
-#   s_A = siteinds(A); s_B = siteinds(B);
-#   for x in 1:N
-#     s_A[x] != s_B[x] && error("The site index are different, impossible to sum")
-#   end
-#   translator(A) != translator(B) && error("The two MPOs have different translation rules")
-#   #Building the sum
-#   sizes_A = size.(A); sizes_B = size.(B)
-#   new_MPOMatrices = Matrix{ITensor}[Matrix{ITensor}(undef, sizes_A[x][1] + sizes_B[x][1], sizes_A[x][2] + sizes_B[x][2]) for x in 1:N] #The identities at the top corner are unchanged
-#   for j in 1:N
-#     #Filling up the A part
-#     for x in 1:sizes_A[j][1], y in 1:sizes_A[j][2]
-#       new_MPOMatrices[j][x, y] = A[j][x, y]
-#     end
-#     #new_MPOMatrices[j][end, end] = A[j][end, end] Not needed as B automatically gives it
-#     #Filling up the B part
-#     x_shift, y_shift = sizes_A[j]
-#     for x in 1:sizes_B[j][1], y in 1:sizes_B[j][2]
-#       new_MPOMatrices[j][x_shift + x, y_shift + y] = B[j][x, y]
-#     end
-#   end
-#   #Filling up the rest
-#   for j in 1:N
-#     s_inds = inds(A[j][1, 1])
-#     x_shift, y_shift = sizes_A[j]
-#     for x in 1:sizes_A[j][1]
-#       left_index = commoninds(A[j][x, x], A[j-1][x, x])
-#       for y in 1:sizes_B[j][2]
-#         right_index = commoninds(B[j][y, y], B[j+1][y, y])
-#         new_MPOMatrices[j][x, y_shift + y] = ITensor(left_index..., s_inds..., right_index...)
-#       end
-#     end
-#     for x in 1:sizes_B[j][1]
-#       left_index = commoninds(B[j][x, x], B[j-1][x, x])
-#       for y in 1:sizes_A[j][2]
-#         right_index = commoninds(A[j][y, y], A[j+1][y, y])
-#         new_MPOMatrices[j][x_shift + x,y] = ITensor(left_index..., s_inds..., right_index...)
-#       end
-#     end
-#   end
-#   #return new_MPOMatrices
-#   return InfiniteMPOMatrix(new_MPOMatrices, translator(A))
-# end
