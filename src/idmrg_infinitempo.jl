@@ -245,6 +245,8 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
   issymmetric = get(kwargs, :issymmetric, true)
   eager = get(kwargs, :eager, true)
   H_extension = get(kwargs, :MPO_extension, iDM.Hmpo)
+  reduced_left_env = get(kwargs, :reduced_left_env, nothing)
+  reduced_right_env = get(kwargs, :reduced_right_env, nothing)
 
   N = nsites(iDM)
   mid_chain = get(kwargs, :mid_chain, div(N, 2))
@@ -301,6 +303,8 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
     if α != 0
       if H_extension == iDM.Hmpo
         env = current_L
+      elseif !isnothing(reduced_left_env)
+        env = reduced_left_env
       else
         #left_link = only(commoninds(iDM.ψ.AL[start-1], iDM.ψ.AL[start]))
         left_link = dag(left_indices[1])
@@ -341,6 +345,9 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
     if count != mid_chain
       #append!(effective_Ls, [current_L])
       current_L = apply_mpomatrix_left(current_L, iDM.Hmpo[start], iDM.ψ.AL[start])
+      if !isnothing(reduced_left_env)
+        reduced_left_env = apply_mpomatrix_left(reduced_left_env, H_extension[start], iDM.ψ.AL[start])
+      end
     end
   end
   effective_Ls = [copy(current_L)]
@@ -374,6 +381,8 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
     if α != 0
       if H_extension == iDM.Hmpo
           env = current_R
+      elseif !isnothing(reduced_right_env)
+        env = reduced_right_env
       else
         right_link = dag(only(uniqueinds(right_indices, s[start+1])))
         right_link_mpo = only(commoninds(H_extension[start+2], H_extension[start+1]))
@@ -423,9 +432,17 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
     #Advance the left environment as long as we are not finished
     #if count != 1
       current_R = apply_mpomatrix_right(current_R, iDM.Hmpo[start+1], iDM.ψ.AR[start+1])
+      if !isnothing(reduced_right_env)
+        reduced_right_env = apply_mpomatrix_right(reduced_right_env, H_extension[start+1], iDM.ψ.AL[start+1])
+      end
     #end
   end
-  return local_ener, err, apply_mpomatrix_left(effective_Ls[1], iDM.Hmpo[original_start + mid_chain-1], iDM.ψ.AL[original_start + mid_chain-1]), current_R
+  current_L = apply_mpomatrix_left(effective_Ls[1], iDM.Hmpo[original_start + mid_chain-1], iDM.ψ.AL[original_start + mid_chain-1])
+  if !isnothing(reduced_left_env)
+    reduced_left_env = apply_mpomatrix_left(reduced_left_env, H_extension[original_start + mid_chain-1], iDM.ψ.AL[original_start + mid_chain-1])
+    return local_ener, err, current_L, current_R, reduced_left_env, reduced_right_env
+  end
+  return local_ener, err, current_L, current_R
 end
 
 
