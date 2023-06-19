@@ -1,9 +1,3 @@
-function ITensors.NDTensors.contraction_output(
-  A::NDTensors.EmptyTensor, B::NDTensors.DiagBlockSparseTensor, label
-)
-  return ITensor(eltype(B), label)
-end
-
 # Struct for use in linear system solver
 struct AOᴸ
   ψ::InfiniteCanonicalMPS
@@ -28,7 +22,7 @@ function (A::AOᴸ)(x)
   δʳ(n) = δ(dag(r[n]), prime(r[n]))
   xT = translatecell(translator(ψ), x, -1)
   for j in (2 - N):1
-    xT = xT * H[j][n, n] * ψ.AL[j] * ψ′.AL[j]
+    xT = xT * ψ.AL[j] * H[j][n, n] * ψ′.AL[j]
   end
   xR = x * ψ.C[1] * (ψ′.C[1] * δʳ(1)) * denseblocks(δˡ(1))
   return xT - xR
@@ -49,7 +43,7 @@ function initialize_left_environment(
   end
   for j in 2:(dₕ - 1)
     mpo_link = only(uniqueinds(H[n + 1][j, 1], sit))
-    Ls[j] = ITensor(Float64, dag(mpo_link), link, dag(prime(link)))
+    Ls[j] = ITensor(Float64, dag(prime(link)), dag(mpo_link), link)
   end
   return Ls
 end
@@ -63,7 +57,7 @@ function apply_local_left_transfer_matrix(
   Ltarget = initialize_left_environment(H, ψ, n_1; init_last=false)
   for j in 1:dₕ
     for k in reverse(j:dₕ)
-      if !isempty(H[n_1][k, j]) && !isempty(Lstart[k])
+      if !zero(H[n_1][k, j]) && !iszero(Lstart[k])
         Ltarget[j] .+= Lstart[k] * ψ.AL[n_1] * H[n_1][k, j] * ψ′.AL[n_1]
       end
     end
@@ -77,6 +71,7 @@ function apply_local_left_transfer_matrix(
 )
   Ltarget = initialize_left_environment(H, ψ, n_1; init_last=false)
   for j in 1:m
+    iszero(H[n_1][m, j]) && continue
     Ltarget[j] = Lstart * ψ.AL[n_1] * H[n_1][m, j] * dag(prime(ψ.AL[n_1]))
   end
   return Ltarget
@@ -123,13 +118,8 @@ function left_environment(H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS; tol=1e
       translatecell(translator(ψ), Ls[1][n + 1], -1), n + 1, H, ψ, 2 - N
     )
     for j in 1:n
-      if isassigned(temp_Ls, j)
-        if isassigned(Ls[1], j)
-          Ls[1][j] += temp_Ls[j]
-        else
-          Ls[1][j] = temp_Ls[j]
-        end
-      end
+      iszero(temp_Ls[j]) && continue
+      Ls[1][j] += temp_Ls[j]
     end
     if !isempty(H[1][n, n])
       λ = H[1][n, n][1, 1]
@@ -233,9 +223,8 @@ function apply_local_right_transfer_matrix(
   ψ′ = dag(prime(ψ.AR[n_1]))
   Ltarget = initialize_right_environment(H, ψ, n_1)
   for j in m:dₕ
-    if !isempty(H[n_1][j, m])
-      Ltarget[j] = Lstart * ψ.AR[n_1] * H[n_1][j, m] * ψ′
-    end
+    iszero(H[n_1][j, m]) && continue
+    Ltarget[j] = Lstart * ψ.AR[n_1] * H[n_1][j, m] * ψ′
   end
   return Ltarget
 end
@@ -273,13 +262,8 @@ function right_environment(H::InfiniteMPOMatrix, ψ::InfiniteCanonicalMPS; tol=1
       translatecell(translator(ψ), Rs[1][n - 1], 1), n - 1, H, ψ, N
     )
     for j in n:dₕ
-      if isassigned(temp_Rs, j)
-        if isassigned(Rs[1], j)
-          Rs[1][j] += temp_Rs[j]
-        else
-          Rs[1][j] = temp_Rs[j]
-        end
-      end
+      iszero(temp_Rs[j]) && continue
+      Rs[1][j] += temp_Rs[j]
     end
     if !isempty(H[1][n, n])
       λ = H[1][n, n][1, 1]
@@ -343,7 +327,7 @@ function (H::H¹)(x)
   result = ITensor(prime(inds(x)))
   for i in 1:dₕ
     for j in 1:dₕ
-      if !isempty(T[i, j])
+      if !iszero(T[i, j])
         result += L[i] * x * T[i, j] * R[j]
       end
     end

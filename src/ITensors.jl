@@ -182,3 +182,12 @@ end
 # TODO: make this definition AbstractMPS
 # Handle orthogonality center correctly
 Base.getindex(ψ::MPS, r::UnitRange{Int}) = MPS([ψ[n] for n in r])
+
+#Would be useful if added to ITensors.jl
+Base.zero(::ITensor) = false * T
+
+function ITensors.NDTensors.contraction_output(
+  A::NDTensors.EmptyTensor, B::NDTensors.DiagBlockSparseTensor, label
+)
+  return ITensor(eltype(B), label)
+end
