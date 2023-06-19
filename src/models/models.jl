@@ -140,35 +140,22 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
           Hmat[range_H + 1 - n, range_H - n] = temp_mat[2, 2]
           Hmat[end, range_H - n] = temp_mat[3, 2]
           Hmat[range_H + 1 - n, 1] = temp_mat[2, 1]
-          Hmat[range_H + 1 - n, range_H + 1 - n] *= ITensor(
-            T, filterinds(commoninds(temp_mat[2, 2], temp_mat[2, 1]); tags="Link")
-          )
-          Hmat[range_H - n, range_H - n] *= ITensor(
-            T, filterinds(commoninds(temp_mat[2, 2], temp_mat[3, 2]); tags="Link")
-          )
         elseif size(temp_mat) == (1, 3)
           @assert n == 0
-          #@assert isempty(temp_mat[1, 1]) || iszero(temp_mat[1, 1])
+          @assert temp_mat[1, 3] == identity
           Hmat[range_H + 1 - n, range_H - n] = temp_mat[1, 2]
           Hmat[range_H + 1 - n, 1] = temp_mat[1, 1]
-          Hmat[range_H - n, range_H - n] *= ITensor(
-            T, filterinds(temp_mat[1, 2]; tags="Link")
-          )
         elseif size(temp_mat) == (3, 1)
           @assert (range_H - n) == 1
-          #@assert isempty(temp_mat[3, 1]) || iszero(temp_mat[3, 1])
+          @assert temp_mat[1, 1] == identity
           Hmat[range_H + 1 - n, range_H - n] = temp_mat[2, 1]
-          Hmat[end, range_H - n] += temp_mat[3, 1]  #LH This should do nothing #TODO check
-          Hmat[range_H + 1 - n, range_H + 1 - n] *= ITensor(
-            T, filterinds(temp_mat[2, 1]; tags="Link")
-          )
+          Hmat[end, range_H - n] += temp_mat[3, 1]  #LH This should do nothing
         else
           error("Unexpected matrix form")
         end
       end
     end
     mpos[j] = Hmat
-    #mpos[j] += dense(Hmat) * setelt(ls[j-1] => total_dim) * setelt(ls[j] => total_dim)
   end
   #unify_indices and add virtual indices to the empty tensors
   mpos = InfiniteMPOMatrix(mpos, translator)
@@ -186,9 +173,13 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
           replaceinds!(mpos.data.data[x][j, k], left_inds[k - 1] => dag(right_inds[k - 1]))
         else
           !isempty(mpos.data.data[x][j, k]) && error("Problem in building Hamiltonians")
-          mpos.data.data[x][j, k] =
-            mpos.data.data[x][j, k] *
-            ITensor(eltype(mpos.data.data[x][j, k]), dag(right_inds[k - 1]))
+          mpos.data.data[x][j, k] = ITensor(
+            eltype(mpos.data.data[x][j, k]),
+            inds(mpos.data.data[x][j, k])...,
+            dag(right_inds[k - 1]),
+          )
+          #mpos.data.data[x][j, k] *
+          #ITensor(eltype(mpos.data.data[x][j, k]), dag(right_inds[k - 1]))
         end
       end
     end
@@ -197,18 +188,26 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
         if x + 1 == N + 1
           if length(commoninds(mpos[x + 1][j, k], right_inds[j - 1])) == 0
             !isempty(mpos[x + 1][j, k]) && error("Problem in building Hamiltonians")
-            mpos.data.data[1][j, k] =
-              mpos.data.data[1][j, k] * ITensor(
-                eltype(mpos.data.data[1][j, k]),
-                translatecell(translator, right_inds[j - 1], -1),
-              )
+            mpos.data.data[1][j, k] = ITensor(
+              eltype(mpos.data.data[1][j, k]),
+              inds(mpos.data.data[1][j, k])...,
+              translatecell(translator, right_inds[j - 1], -1),
+            )
+            #mpos.data.data[1][j, k] * ITensor(
+            #  eltype(mpos.data.data[1][j, k]),
+            #  translatecell(translator, right_inds[j - 1], -1),
+            #)
           end
         else
           if length(commoninds(mpos.data[x + 1][j, k], right_inds[j - 1])) == 0
             !isempty(mpos.data[x + 1][j, k]) && error("Problem in building Hamiltonians")
-            mpos.data.data[x + 1][j, k] =
-              mpos.data.data[x + 1][j, k] *
-              ITensor(eltype(mpos.data.data[x + 1][j, k]), right_inds[j - 1])
+            mpos.data.data[x + 1][j, k] = ITensor(
+              eltype(mpos.data.data[x + 1][j, k]),
+              inds(mpos.data.data[x + 1][j, k])...,
+              right_inds[j - 1],
+            )
+            #mpos.data.data[x + 1][j, k] *
+            #ITensor(eltype(mpos.data.data[x + 1][j, k]), right_inds[j - 1])
           end
         end
       end

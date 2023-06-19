@@ -3,22 +3,6 @@ using ITensorInfiniteMPS
 using Test
 using Random
 
-function ITensors.space(::SiteType"FermionK", pos::Int; p=1, q=1, conserve_momentum=true)
-  if !conserve_momentum
-    return [QN("Nf", -p) => 1, QN("Nf", q - p) => 1]
-  else
-    return [
-      QN(("Nf", -p), ("NfMom", -p * pos)) => 1,
-      QN(("Nf", q - p), ("NfMom", (q - p) * pos)) => 1,
-    ]
-  end
-end
-
-# Forward all op definitions to Fermion
-function ITensors.op!(Op::ITensor, opname::OpName, ::SiteType"FermionK", s::Index...)
-  return ITensors.op!(Op, opname, SiteType("Fermion"), s...)
-end
-
 #Currently, VUMPS cannot give the right result as the subspace expansion is too small
 #This is meant to test the generalized translation rules
 @testset "vumpsmpo_fqhe" begin
@@ -48,18 +32,18 @@ end
 
   #ψ1 = InfMPS(s, n->[1, 2, 2, 1, 1, 1][n]);
 
-  @testset "VUMPS/TDVP with: multisite_update_alg = $multisite_update_alg, conserve_qns = $conserve_qns, nsites = $nsites" for multisite_update_alg in
-                                                                                                                               [
+  @testset "VUMPS/TDVP with: multisite_update_alg = $multisite_update_alg, conserve_qns = $conserve_qns, nsites = $N" for multisite_update_alg in
+                                                                                                                          [
       "sequential"
     ],
     conserve_qns in [true],
-    nsites in [6],
+    N in [6],
     time_step in [-Inf]
 
     vumps_kwargs = (; multisite_update_alg, tol, maxiter, outputlevel=0, time_step)
     subspace_expansion_kwargs = (; cutoff, maxdim)
 
-    function fermion_momentum_translator(i::Index, n::Integer; N=nsites)
+    function fermion_momentum_translator(i::Index, n::Integer; N=N)
       ts = tags(i)
       translated_ts = ITensorInfiniteMPS.translatecelltags(ts, n)
       new_i = replacetags(i, ts => translated_ts)
@@ -75,7 +59,7 @@ end
 
     s = infsiteinds(
       "FermionK",
-      nsites;
+      N;
       initstate,
       translator=fermion_momentum_translator,
       p,
