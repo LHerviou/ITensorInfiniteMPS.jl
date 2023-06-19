@@ -86,15 +86,15 @@ function ITensors.expect(ψ::InfiniteCanonicalMPS, h::InfiniteMPOMatrix)
   Ncell = nsites(h)
   L, R = generate_edges(h)
   l = commoninds(ψ.AL[0], ψ.AL[1])
-  L = ITensorInfiniteMPS.apply_tensor(L, δ(l, dag(prime(l))))
+  L = ITensorInfiniteMPS.apply_tensors_to_MPOarray(L, δ(l, dag(prime(l))))
   r = commoninds(ψ.AR[Ncell + 1], ψ.AR[Ncell])
-  R = ITensorInfiniteMPS.apply_tensor(R, δ(r, dag(prime(r))))
-  L = ITensorInfiniteMPS.apply_tensor(L, ψ.C[0], dag(prime(ψ.C[0])))
-  for j in 1:nsites(ψ)
-    temp = ITensorInfiniteMPS.apply_tensor(h[j], ψ.AR[j], dag(prime(ψ.AR[j])))
-    L = L * temp
+  R = ITensorInfiniteMPS.apply_tensors_to_MPOarray(R, δ(r, dag(prime(r))))
+  L = ITensorInfiniteMPS.apply_tensors_to_MPOarray(L, ψ.C[0], dag(prime(ψ.C[0])))
+  for j in reverse(1:nsites(ψ))
+    temp = ITensorInfiniteMPS.apply_tensors_to_MPOarray(h[j], ψ.AR[j], dag(prime(ψ.AR[j])))
+    R = temp * R
   end
-  return ITensorInfiniteMPS.scalar_product(L, R)[1]
+  return sum(L .* R)[1]
 end
 
 #H = ΣⱼΣn (½ S⁺ⱼS⁻ⱼ₊n + ½ S⁻ⱼS⁺ⱼ₊n + SᶻⱼSᶻⱼ₊n)

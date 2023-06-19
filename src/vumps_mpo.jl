@@ -57,7 +57,7 @@ function apply_local_left_transfer_matrix(
   Ltarget = initialize_left_environment(H, ψ, n_1; init_last=false)
   for j in 1:dₕ
     for k in reverse(j:dₕ)
-      if !zero(H[n_1][k, j]) && !iszero(Lstart[k])
+      if !iszero(H[n_1][k, j]) && !iszero(Lstart[k])
         Ltarget[j] .+= Lstart[k] * ψ.AL[n_1] * H[n_1][k, j] * ψ′.AL[n_1]
       end
     end
