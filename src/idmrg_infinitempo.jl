@@ -89,6 +89,12 @@ function advance_environments(H::iDMRGStructure{InfiniteMPO})
   return H.L = translatecell(translator(H), H.L, -1)
 end
 
+function advance_environments(H::iDMRGStructure{InfiniteMPO}, n::Int64)
+  for j in 1:n
+    advance_environments(H)
+  end
+end
+
 function set_environments_defaultposition(H::iDMRGStructure{InfiniteMPO,ITensor})
   N = nsites(H)
   if mod1(H.counter, N) == 1
@@ -280,9 +286,9 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
   for (count, start) in enumerate(original_start:original_start+mid_chain-1)
     #build the local tensor start .... start + nb_site - 1
     starting_state = iDM.ψ.C[start-1] * iDM.ψ.AR[start] * iDM.ψ.AR[start + 1]
-    #if α != 0
-    #  starting_state += max(α, 1e-6) * randomITensor(inds(starting_state)) #ensures that every sector has some non zero elements
-    #end
+    if α != 0
+      starting_state += max(α, 1e-7) * randomITensor(inds(starting_state)) #ensures that every sector has some non zero elements
+    end
     #build_local_Hamiltonian
     temp_H = temporaryHamiltonian{InfiniteMPO,ITensor}(
     current_L, effective_Rs[count], iDM.Hmpo, start
@@ -290,15 +296,11 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
     local_ener, new_x, info = eigsolve(
     temp_H, starting_state, 1, :SR; issymmetric, ishermitian = true, tol=solver_tol, eager
     )
-    #println(info)
     theta = new_x[1]
-    #left_indices = commoninds(theta, iDM.ψ.AL[start] )
+
     left_indices = [only(commoninds(theta,  iDM.ψ.C[start-1] )) , s[start]]
-    #left_dim = prod(dim.(left_indices))
-    #right_indices = commoninds(theta, iDM.ψ.AR[start+1])
     right_indices = uniqueinds(theta, left_indices)
-    #right_dim = prod(dim.(right_indices))
-    #target_dim = min(right_dim, left_dim, maxdim)
+
     newtags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start + 1])))
     if α != 0
       if H_extension == iDM.Hmpo
@@ -334,8 +336,6 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
     if count != mid_chain
       iDM.ψ.AR[start] = ortho_polar(U2 * S2, iDM.ψ.C[start - 1])
     end
-    #check_unitarity(iDM.ψ.AR[start], only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start-1])))
-    #println((iDM.ψ.AR[start] * dag(iDM.ψ.AR[start]))[1])
     iDM.ψ.AR[start+1] = V2
     if count == mid_chain
       iDM.ψ.AL[start+1] = ortho_polar(S2*V2, iDM.ψ.C[start + 1])
@@ -359,9 +359,9 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
   for (count, start) in reverse(collect(enumerate(original_start+mid_chain-1:original_start+N-2)))
     #build the local tensor start .... start + nb_site - 1
     starting_state = iDM.ψ.AL[start] * iDM.ψ.AL[start + 1] * iDM.ψ.C[start+1]
-    #if α != 0
-    #  starting_state += max(α, 1e-6) * randomITensor(inds(starting_state)) #ensures that every sector has some non zero elements
-    #end
+    if α != 0 && start != original_start+mid_chain-1
+      starting_state += max(α, 1e-6) * randomITensor(inds(starting_state)) #ensures that every sector has some non zero elements
+    end
     #build_local_Hamiltonian
     temp_H = temporaryHamiltonian{InfiniteMPO,ITensor}(
     effective_Ls[count], current_R, iDM.Hmpo, start
@@ -423,11 +423,8 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
     if count == 1
       iDM.ψ.AR[start] = ortho_polar(U2 * S2, iDM.ψ.C[start - 1])
     end
-    #check_unitarity(iDM.ψ.AR[start], only(commoninds(iDM.ψ.AR[start], iDM.ψ.AR[start-1])))
-    #println((iDM.ψ.AR[start] * dag(iDM.ψ.AR[start]))[1])
 
     iDM.ψ.AR[start+1] = V2
-    #check_unitarity(V2, only(commoninds(V2, S2)))
     iDM.ψ.AL[start+1] = ortho_polar(S2*V2, iDM.ψ.C[start + 1])
     #Advance the left environment as long as we are not finished
     #if count != 1
@@ -477,6 +474,5 @@ function idmrg_step_with_noise(
   end
   #local_ener, err, currentR = idmrg_step_with_noise_auxiliary_movingright(iDM; solver_tol, maxdim, cutoff, α, kwargs...)
   iDM.counter += mid_chain #N ÷ 2
-  #println(iDM.counter)
   return local_ener[1] / N , err
 end

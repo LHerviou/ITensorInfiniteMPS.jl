@@ -437,7 +437,6 @@ end
 function subspace_expansion(
   theta::ITensor, env::ITensor, H::InfiniteMPO, b::Tuple{Int,Int}; maxdim, cutoff, newtags, α = 1e-2, svd_indices, kwargs...
 )
-
   extension = noprime( ((env * theta) * H[b[1]] ) * H[b[2]] )
   extension = extension * (α / norm(extension)) #LH: I am not sure the renormalization by norm(extension) is really needed here
   supp_index = only(commoninds(H[b[2]], H[b[2] + b[2] - b[1]]))
@@ -456,12 +455,14 @@ function subspace_expansion(
   theta_extended * cc,
   svd_indices;
   maxdim=maxdim,
-  cutoff=cutoff,
+  cutoff=cutoff/100,
   lefttags=newtags,
   righttags=newtags,
+  use_relative_cutoff=false,
+  use_absolute_cutoff = true,
+  #mindim = maxdim
   )
-
-  V2 = V2 * dag(cc) * dag(closure)
+  V2 = V2 * (dag(cc) * dag(closure))
   return U2, S2, V2
 end
 

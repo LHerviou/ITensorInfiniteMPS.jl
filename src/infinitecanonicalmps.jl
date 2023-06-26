@@ -332,7 +332,7 @@ function entropies(psi::InfiniteCanonicalMPS)
     localC = psi.C[x]
     if isdiag(localC)
       for s in 1:size(localC, 1)
-        ent += -2 * localC[s, s]^2 * log(localC[s, s])
+        ent += -2 * localC[s, s]^2 * log(abs(localC[s, s]))
       end
     else
       linkl = only(commoninds(psi.C[x], psi.AL[x]))
