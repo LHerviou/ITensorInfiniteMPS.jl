@@ -182,146 +182,105 @@ end
 # TODO: make this definition AbstractMPS
 # Handle orthogonality center correctly
 Base.getindex(ψ::MPS, r::UnitRange{Int}) = MPS([ψ[n] for n in r])
-
-#Would be useful if added to ITensors.jl
-Base.zero(T::ITensor) = false * T
-
-#Fixing some missing contractions
-function ITensors.NDTensors.contraction_output(
-  A::NDTensors.EmptyTensor, B::NDTensors.DiagBlockSparseTensor, label
-)
-  return ITensor(eltype(B), label)
-end
-
-function ITensors.NDTensors.contraction_output(
-  A::NDTensors.EmptyTensor, B::NDTensors.DiagTensor, label::Any
-)
-  return ITensor(eltype(B), label)
-end
-
-#function ITensors.NDTensors.contraction_output(
-#  A::NDTensors.EmptyTensor, B::NDTensors.EmptyTensor, label
-#)
-#  return ITensor(eltype(B), label)
-#end
-
-function ITensors.NDTensors.contract!!(
-  A::ITensor,
-  ::NTuple{N,Int64},
-  ::NDTensors.EmptyTensor{
-    Float64,
-    P,
-    NTuple{P,Index{Int64}},
-    NDTensors.EmptyStorage{Float64,NDTensors.Dense{Float64,Vector{Float64}}},
-  },
-  ::NTuple{Q,Int64},
-  ::NDTensors.DiagTensor{Float64,R,NTuple{R,Index{Int64}},NDTensors.Diag{Float64,Float64}},
-  ::NTuple{S,Int64},
-) where {N,P,Q,R,S}
-  return A
-end
-
-function ITensors.NDTensors.contract!!(
-  A::ITensor,
-  ::NTuple{N,Int64},
-  ::NDTensors.EmptyTensor{
-    Float64,
-    P,
-    NTuple{P,Index{Vector{Pair{QN,Int64}}}},
-    NDTensors.EmptyStorage{Float64,NDTensors.BlockSparse{Float64,Vector{Float64},P}},
-  },
-  ::NTuple{Q,Int64},
-  ::NDTensors.DiagBlockSparseTensor{
-    Float64,
-    R,
-    NTuple{R,Index{Vector{Pair{QN,Int64}}}},
-    NDTensors.DiagBlockSparse{Float64,Float64,R},
-  },
-  ::NTuple{S,Int64},
-) where {N,P,Q,R,S}
-  return A
-end
-
-function ITensors.NDTensors.contract!!(
-  A::ITensor,
-  ::NTuple{N,Int64},
-  ::NDTensors.EmptyTensor{
-    Float64,
-    P,
-    NTuple{P,Index{Vector{Pair{QN,Int64}}}},
-    NDTensors.EmptyStorage{Float64,NDTensors.BlockSparse{Float64,Vector{Float64},P}},
-  },
-  ::NTuple{P,Int64},
-  ::NDTensors.EmptyTensor{
-    Float64,
-    R,
-    NTuple{P,Index{Vector{Pair{QN,Int64}}}},
-    NDTensors.EmptyStorage{Float64,NDTensors.BlockSparse{Float64,Vector{Float64},R}},
-  },
-  ::NTuple{S,Int64},
-) where {N,P,Q,R,S}
-  println("Blah")
-  return A
-end
-
-function ITensors.NDTensors.contract!!(
-  A::ITensor,
-  ::NTuple{N,Int64},
-  ::NDTensors.EmptyTensor{
-    Float64,
-    P,
-    NTuple{P,Index{Vector{Pair{QN,Int64}}}},
-    NDTensors.EmptyStorage{Float64,NDTensors.BlockSparse{Float64,Vector{Float64},P}},
-  },
-  ::NTuple{P,Int64},
-  ::ITensor,
-  ::NTuple{S,Int64},
-) where {N,P,Q,R,S}
-  println("Blah")
-  return A
-end
-
-function ITensors.NDTensors.datatype(
-  ::ITensors.EmptyStorage{Float64,ITensors.NDTensors.BlockSparse{Float64,Vector{Float64},N}}
-) where {N}
-  return Vector{Float64}
-end
-
-function ITensors.NDTensors.datatype(T::ITensors.NDTensors.TensorStorage{Float64})
-  return typeof(data(T))
-end
-
-# function ITensors.NDTensors.promote_rule(
-#  ::Type{T1}, ::Type{T2}
-# ) where {T1<:ITensors.NDTensors.EmptyStorage{NDTensors.EmptyNumber},T2<:NDTensors.TensorStorage}
-#  return T2
-# end
-# #
-# function ITensors.NDTensors.promote_rule(::Type{T1}, ::Type{T2}) where {T1<:(NDTensors.EmptyStorage{NDTensors.EmptyNumber}), T2<:NDTensors.EmptyStorage}
-#   return ITensors.NDTensors.promote_rule(ITensors.NDTensors.similartype(T2, eltype(T1)), T2)
-# end
-
-# function ITensors.NDTensors.promote_rule(::Type{T1}, ::Type{T2}) where {T1<:EmptyStorage, T2<:TensorStorage}
-#  println("C")
-#  return ITensors.NDTensors.promote_type(ITensors.NDTensors.similartype(T2, eltype(T1)), T2)
-# end
-
 #
-# function ITensors.NDTensors.promote_rule(::Type{T1}, ::Type{T2}) where {T1<:EmptyStorage,T2<:EmptyStorage}
-# #   println("D")
-# #   println(T2)
-#   return T2
+# #Would be useful if added to ITensors.jl
+# Base.zero(T::ITensor) = false * T
+#
+# #Fixing some missing contractions
+# function ITensors.NDTensors.contraction_output(
+#   A::NDTensors.EmptyTensor, B::NDTensors.DiagBlockSparseTensor, label
+# )
+#   return ITensor(eltype(B), label)
 # end
 #
-# function ITensors.NDTensors.promote_rule(::Type{T1}, ::Type{T2}) where {T1<:(NDTensors.EmptyStorage{NDTensors.EmptyNumber}), T2<:(NDTensors.EmptyStorage)}
-#   return T2
+# function ITensors.NDTensors.contraction_output(
+#   A::NDTensors.EmptyTensor, B::NDTensors.DiagTensor, label::Any
+# )
+#   return ITensor(eltype(B), label)
 # end
 #
-# function ITensors.NDTensors.promote_rule(::Type{T1}, ::Type{T2}) where {T1<:(NDTensors.EmptyStorage{NDTensors.EmptyNumber}), T2<:(NDTensors.EmptyStorage{NDTensors.EmptyNumber})}
-#   return T2
+# function ITensors.NDTensors.contract!!(
+#   A::ITensor,
+#   ::NTuple{N,Int64},
+#   ::NDTensors.EmptyTensor{
+#     Float64,
+#     P,
+#     NTuple{P,Index{Int64}},
+#     NDTensors.EmptyStorage{Float64,NDTensors.Dense{Float64,Vector{Float64}}},
+#   },
+#   ::NTuple{Q,Int64},
+#   ::NDTensors.DiagTensor{Float64,R,NTuple{R,Index{Int64}},NDTensors.Diag{Float64,Float64}},
+#   ::NTuple{S,Int64},
+# ) where {N,P,Q,R,S}
+#   return A
 # end
-
-#function ITensors.NDTensors.promote_rule(::Type{T1}, ::Type{T2}) where {T1<:(NDTensors.EmptyStorage{NDTensors.EmptyNumber}), T2<:(NDTensors.EmptyStorage{NDTensors.EmptyNumber})}
-#  println("A")
-#  return T1
-#end
+#
+# function ITensors.NDTensors.contract!!(
+#   A::ITensor,
+#   ::NTuple{N,Int64},
+#   ::NDTensors.EmptyTensor{
+#     Float64,
+#     P,
+#     NTuple{P,Index{Vector{Pair{QN,Int64}}}},
+#     NDTensors.EmptyStorage{Float64,NDTensors.BlockSparse{Float64,Vector{Float64},P}},
+#   },
+#   ::NTuple{Q,Int64},
+#   ::NDTensors.DiagBlockSparseTensor{
+#     Float64,
+#     R,
+#     NTuple{R,Index{Vector{Pair{QN,Int64}}}},
+#     NDTensors.DiagBlockSparse{Float64,Float64,R},
+#   },
+#   ::NTuple{S,Int64},
+# ) where {N,P,Q,R,S}
+#   return A
+# end
+#
+# function ITensors.NDTensors.contract!!(
+#   A::ITensor,
+#   ::NTuple{N,Int64},
+#   ::NDTensors.EmptyTensor{
+#     Float64,
+#     P,
+#     NTuple{P,Index{Vector{Pair{QN,Int64}}}},
+#     NDTensors.EmptyStorage{Float64,NDTensors.BlockSparse{Float64,Vector{Float64},P}},
+#   },
+#   ::NTuple{P,Int64},
+#   ::NDTensors.EmptyTensor{
+#     Float64,
+#     R,
+#     NTuple{P,Index{Vector{Pair{QN,Int64}}}},
+#     NDTensors.EmptyStorage{Float64,NDTensors.BlockSparse{Float64,Vector{Float64},R}},
+#   },
+#   ::NTuple{S,Int64},
+# ) where {N,P,Q,R,S}
+#   println("Blah")
+#   return A
+# end
+#
+# function ITensors.NDTensors.contract!!(
+#   A::ITensor,
+#   ::NTuple{N,Int64},
+#   ::NDTensors.EmptyTensor{
+#     Float64,
+#     P,
+#     NTuple{P,Index{Vector{Pair{QN,Int64}}}},
+#     NDTensors.EmptyStorage{Float64,NDTensors.BlockSparse{Float64,Vector{Float64},P}},
+#   },
+#   ::NTuple{P,Int64},
+#   ::ITensor,
+#   ::NTuple{S,Int64},
+# ) where {N,P,Q,R,S}
+#   println("Blah")
+#   return A
+# end
+#
+# function ITensors.NDTensors.datatype(
+#   ::ITensors.EmptyStorage{Float64,ITensors.NDTensors.BlockSparse{Float64,Vector{Float64},N}}
+# ) where {N}
+#   return Vector{Float64}
+# end
+#
+# function ITensors.NDTensors.datatype(T::ITensors.NDTensors.TensorStorage{Float64})
+#   return typeof(data(T))
+# end
