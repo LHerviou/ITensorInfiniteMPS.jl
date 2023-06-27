@@ -455,7 +455,7 @@ function subspace_expansion(
   theta_extended * cc,
   svd_indices;
   maxdim=maxdim,
-  cutoff=cutoff/100,
+  cutoff=cutoff,
   lefttags=newtags,
   righttags=newtags,
   use_relative_cutoff=false,

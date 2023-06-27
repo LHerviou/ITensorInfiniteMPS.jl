@@ -619,162 +619,115 @@ function make_dummy_indices_explicit(H::InfiniteMPOMatrix)
 end
 
 
-function convert_itensor_33matrix(tensor; leftdir = ITensors.Out)
+function convert_itensor_to_itensormatrix(tensor; kwargs...)
+  if order(tensor) == 3
+    return convert_itensor_3vector(tensor; kwargs...)
+  elseif order(tensor) == 4
+    return convert_itensor_33matrix(tensor; kwargs...)
+  else
+    error(
+      "Conversion of ITensor into matrix of ITensor not planned for this type of tensors"
+    )
+  end
+end
+
+"Build the projectors on the three parts of the itensor used to split a MPO into an InfiniteMPOMatrix"
+function build_three_projectors_from_index(is::Index; kwargs...)
+  old_dim = dim(is)
+  new_tags = get(kwargs, :tags, tags(is))
+  #Build the local projectors.
+  #We have to differentiate between the dense and the QN case
+  #Note that as far as I know, the MPO even dense is always guaranteed to have identities at both corners
+  #If it is not the case, my construction will not work
+  top = onehot(dag(is) => 1)
+  bottom = onehot(dag(is) => old_dim)
+  if length(is.space) == 1
+    new_ind = Index(is.space - 2; tags=new_tags)
+    mat = zeros(new_ind.space, is.space)
+    for x in 1:(new_ind.space)
+      mat[x, x + 1] = 1
+    end
+    middle = ITensor(copy(mat), new_ind, dag(is))
+  else
+    new_ind = Index(is.space[2:(end - 1)]; dir=dir(is), tags=new_tags)
+    middle = ITensors.BlockSparseTensor(
+      Float64,
+      undef,
+      Block{2}[Block(x, x + 1) for x in 1:length(new_ind.space)],
+      (new_ind, dag(is)),
+    )
+    for x in 1:length(new_ind.space)
+      dim_block = new_ind.space[x][2]
+      ITensors.blockview(middle, Block(x, x + 1)) .= diagm(0 => ones(dim_block))
+    end
+    middle = itensor(middle)
+  end
+  return top, middle, bottom
+end
+
+function convert_itensor_33matrix(tensor; leftdir=ITensors.In, kwargs...)
   @assert order(tensor) == 4
-  sit = filterinds(inds(tensor), tags="Site")
-  local_sit = noprime(only(filterinds(sit, plev = 1)))
-  temp = uniqueinds(tensor, sit)
-  if dir(temp[1]) == leftdir
-    left_ind = temp[1]
-    right_ind = temp[2]
-  else
-    left_ind = temp[2]
-    right_ind = temp[1]
-  end
-  len_left_ind = length(left_ind.space)
-  len_right_ind = length(right_ind.space)
-
-  blocks = Matrix{Vector{Block{4}}}(undef, 3, 3)
-  for i in 1:3, j in 1:3
-    blocks[i, j] = Block{4}[]
-  end
-  T = permute(tensor, sit..., left_ind, right_ind; allow_alias=true)
-  for (n, b) in enumerate(eachnzblock(T))
-    if b[3] == 1
-      if b[4] == len_right_ind
-        append!(blocks[1, 3], [b])
-      elseif b[4] != 1
-        append!(blocks[1, 2], [b])
-      else
-        append!(blocks[1, 1], [b])
-      end
-    elseif b[3] == len_left_ind
-      if b[4] == 1
-        append!(blocks[3, 1], [b])
-      elseif b[4] != len_right_ind
-        append!(blocks[3, 2], [b])
-      else
-        append!(blocks[3, 3], [b])
-      end
+  left_ind = get(kwargs, :leftindex, nothing)
+  #Identify the different indices
+  sit = filterinds(inds(tensor); tags="Site")
+  local_sit = dag(only(filterinds(sit; plev=0)))
+  #A bit roundabout as filterinds does not accept dir
+  if isnothing(left_ind)
+    temp = uniqueinds(tensor, sit)
+    if dir(temp[1]) == leftdir
+      left_ind = temp[1]
+      right_ind = temp[2]
     else
-      if b[4] == 1
-        append!(blocks[2, 1], [b])
-      elseif b[4] == len_right_ind
-        append!(blocks[2, 3], [b])
-      else
-        append!(blocks[2, 2], [b])
-      end
+      left_ind = temp[2]
+      right_ind = temp[1]
     end
+  else
+    right_ind = only(uniqueinds(tensor, sit, left_ind))
   end
-  new_left_ind = Index(left_ind.space[2:end-1], dir = dir(left_ind), tags = tags(left_ind))
-  new_right_ind = Index(right_ind.space[2:end-1], dir = dir(right_ind), tags = tags(right_ind))
+  left_dim = dim(left_ind)
+  right_dim = dim(right_ind)
+  #Build the local projectors.
+  left_tags = get(kwargs, :left_tags, tags(left_ind))
+  top_left, middle_left, bottom_left = build_three_projectors_from_index(
+    left_ind; tags=left_tags
+  )
+  right_tags = get(kwargs, :righ_tags, tags(right_ind))
+  top_right, middle_right, bottom_right = build_three_projectors_from_index(
+    right_ind; tags=right_tags
+  )
 
-  matrix =  fill(op("Zero", local_sit), 3, 3)
-  identity = op("Id", local_sit)
-  matrix[1, 1] = identity; matrix[3, 3] = identity
-  if !isempty(blocks[1, 2])
-    temp = ITensors.BlockSparseTensor(eltype(T), undef, Block{3}[Block(b[1], b[2], b[4]-1) for b in blocks[1, 2]], (sit..., new_right_ind))
-    for b in blocks[1, 2]
-      ITensors.blockview(temp, Block(b[1], b[2], b[4]-1)) .= T[b]
+  matrix = fill(op("Zero", local_sit), 3, 3)
+  for (idx_left, proj_left) in enumerate([top_left, middle_left, bottom_left])
+    for (idx_right, proj_right) in enumerate([top_right, middle_right, bottom_right])
+      matrix[idx_left, idx_right] = proj_left * tensor * proj_right
     end
-    matrix[1, 2] = itensor(temp)
-  end
-  if !isempty(blocks[2, 1])
-    temp = ITensors.BlockSparseTensor(eltype(T), undef, Block{3}[Block(b[1], b[2], b[3]-1) for b in blocks[2, 1]], (sit..., new_left_ind))
-    for b in blocks[2, 1]
-      ITensors.blockview(temp, Block(b[1], b[2], b[3]-1)) .= T[b]
-    end
-    matrix[2, 1] = itensor(temp)
-  end
-  if !isempty(blocks[2, 2])
-    temp = ITensors.BlockSparseTensor(eltype(T), undef, Block{4}[Block(b[1], b[2], b[3]-1, b[4]-1) for b in blocks[2, 2]], (sit..., new_left_ind, new_right_ind))
-    for b in blocks[2, 2]
-      ITensors.blockview(temp, Block(b[1], b[2], b[3]-1, b[4]-1)) .= T[b]
-    end
-    matrix[2, 2] = itensor(temp)
-  end
-  if !isempty(blocks[2, 3])
-    temp = ITensors.BlockSparseTensor(eltype(T), undef, Block{3}[Block(b[1], b[2], b[3]-1) for b in blocks[2, 3]], (sit..., new_left_ind))
-    for b in blocks[2, 3]
-      ITensors.blockview(temp, Block(b[1], b[2], b[3]-1)) .= T[b]
-    end
-    matrix[2, 3] = itensor(temp)
-  end
-  #if !isempty(blocks[3, 2])
-    temp = ITensors.BlockSparseTensor(eltype(T), undef, Block{3}[Block(b[1], b[2], b[4]-1) for b in blocks[3, 2]], (sit..., new_right_ind))
-    for b in blocks[3, 2]
-      ITensors.blockview(temp, Block(b[1], b[2], b[4]-1)) .= T[b]
-    end
-    matrix[3, 2] = itensor(temp)
-  #end
-  if length(blocks[1, 3]) != 0 || length(blocks[3, 1]) != 0
-    error("Terms not yet taken into account")
   end
   return matrix
 end
 
-
-
-function convert_itensor_3matrix(tensor; leftdir = ITensors.Out)
+function convert_itensor_3vector(
+  tensor; leftdir=ITensors.In, first=false, last=false, kwargs...
+)
   @assert order(tensor) == 3
-  sit = filterinds(inds(tensor), tags="Site")
-  local_sit = noprime(only(filterinds(sit, plev = 1)))
-  manip_ind = only(uniqueinds(tensor, sit))
-  len_manip_ind = length(manip_ind.space)
-
-  blocks = Vector{Vector{Block{3}}}(undef, 3)
-  for i in 1:3
-    blocks[i] = Block{3}[]
-  end
-  T = permute(tensor, sit..., manip_ind; allow_alias=true)
-  for (n, b) in enumerate(eachnzblock(T))
-    if b[3] == 1
-      append!(blocks[1], [b])
-    elseif b[3] == len_manip_ind
-      append!(blocks[3], [b])
-    else
-      append!(blocks[2], [b])
-    end
-  end
-  new_manip_ind = Index(manip_ind.space[2:end-1], dir = dir(manip_ind), tags = tags(manip_ind))
-
-  if dir(manip_ind) == leftdir
-    matrix =  fill(op("Zero", local_sit), 3, 1)
+  #Identify the different indices
+  sit = filterinds(inds(tensor); tags="Site")
+  local_sit = dag(only(filterinds(sit; plev=0)))
+  #A bit roundabout as filterinds does not accept dir
+  old_ind = only(uniqueinds(tensor, sit))
+  if dir(old_ind) == leftdir || last
+    new_tags = get(kwargs, :left_tags, tags(old_ind))
+    top, middle, bottom = build_three_projectors_from_index(old_ind; tags=new_tags)
+    vector = fill(op("Zero", local_sit), 3, 1)
   else
-    matrix =  fill(op("Zero", local_sit), 1, 3)
+    new_tags = get(kwargs, :right_tags, tags(old_ind))
+    top, middle, bottom = build_three_projectors_from_index(old_ind; tags=new_tags)
+    vector = fill(op("Zero", local_sit), 1, 3)
   end
-
-  if !isempty(blocks[1])
-    temp = ITensors.BlockSparseTensor(eltype(T), undef, Block{2}[Block(b[1], b[2]) for b in blocks[1]], (sit...,))
-    for b in blocks[1]
-      ITensors.blockview(temp, Block(b[1], b[2])) .= T[b]
-    end
-    matrix[1] = itensor(temp)
+  for (idx, proj) in enumerate([top, middle, bottom])
+    vector[idx] = proj * tensor
   end
-  if !isempty(blocks[2])
-    temp = ITensors.BlockSparseTensor(eltype(T), undef, Block{3}[Block(b[1], b[2], b[3]-1) for b in blocks[2]], (sit..., new_manip_ind))
-    for b in blocks[2]
-      ITensors.blockview(temp, Block(b[1], b[2], b[3]-1)) .= T[b]
-    end
-    matrix[2] = itensor(temp)
-  else
-    matrix[2] = ITensor(sit..., new_manip_ind)
-  end
-  if !isempty(blocks[3])
-    temp = ITensors.BlockSparseTensor(eltype(T), undef, Block{2}[Block(b[1], b[2]) for b in blocks[3]], (sit...,))
-    for b in blocks[3]
-      ITensors.blockview(temp, Block(b[1], b[2])) .= T[b]
-    end
-    matrix[3] = itensor(temp)
-  end
-  return matrix
+  return vector
 end
-
-function convert_itensor_matrix(tensor; leftdir = ITensors.Out)
-  order(tensor) == 3 && return convert_itensor_3matrix(tensor; leftdir)
-  return convert_itensor_33matrix(tensor; leftdir)
-end
-
 
 
 function finding_indices(mat::Matrix{ITensor}; dir = ITensor.Out)

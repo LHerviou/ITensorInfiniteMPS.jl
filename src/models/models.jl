@@ -87,38 +87,13 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector; kwargs...)
   return InfiniteMPOMatrix(model, s, translator(s); kwargs...)
 end
 
-# function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; kwargs...)
-#   N = length(s)
-#   temp_H = InfiniteSum{MPO}(model, s; kwargs...)
-#   range_H = ITensorInfiniteMPS.nrange(temp_H)[1]
-#   ls = CelledVector([Index(1, "Link,c=1,n=$n") for n in 1:N], translator)
-#   mpos = [Matrix{ITensor}(undef, 1, 1) for i in 1:N]
-#   for j in 1:N
-#     Hmat = fill(op("Zero", s[j]), range_H + 1, range_H + 1)
-#     identity = op("Id", s[j])
-#     Hmat[1, 1] = identity
-#     Hmat[end, end] = identity
-#     for n in 0:(range_H - 1)
-#       idx = findfirst(x -> x == j, findsites(temp_H[j - n]; ncell=N))
-#       if isnothing(idx)
-#         Hmat[range_H + 1 - n, range_H - n] = identity
-#       else
-#         Hmat[range_H + 1 - n, range_H - n] = temp_H[j - n][idx]#replacetags(linkinds, temp_H[j - n][idx], "Link, l=$n", tags(ls[j-1]))
-#       end
-#     end
-#     mpos[j] = Hmat
-#     #mpos[j] += dense(Hmat) * setelt(ls[j-1] => total_dim) * setelt(ls[j] => total_dim)
-#   end
-#   #return mpos
-#   return InfiniteMPOMatrix(mpos, translator)
-# end
-
-
 function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; kwargs...)
   N = length(s)
+  println("Starting InfiniteSum{MPO}")
   temp_H = InfiniteSum{MPO}(model, s; kwargs...)
   range_H = nrange(temp_H)[1]
   ls = CelledVector([Index(1, "Link,c=1,n=$n") for n in 1:N], translator)
+  println("Filling up the tensors")
   mpos = [Matrix{ITensor}(undef, 1, 1) for i in 1:N]
   for j in 1:N
     Hmat = fill(op("Zero", s[j]), range_H + 1, range_H + 1)
@@ -157,6 +132,7 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
     #mpos[j] += dense(Hmat) * setelt(ls[j-1] => total_dim) * setelt(ls[j] => total_dim)
   end
   #unify_indices
+  println("Uniformizing the indices")
   mpos = InfiniteMPOMatrix(mpos, translator)
   for x in 1:N
     left_inds = finding_indices(mpos[x]; dir = ITensors.Out)
@@ -187,22 +163,6 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
       end
     end
   end
-  #
-  #   for j in 2:size(mpos[x+1], 1) - 1
-  #     new_ind = filterinds(mpos[x+1][j, 1], tags = "Link")
-  #     length(new_ind) == 0 && continue
-  #     new_ind = only(new_ind)
-  #     old_ind = filterinds(mpos[x][end, j], tags = "Link")
-  #     for k in 1:size(mpos[x], 1)
-  #       if length(commoninds(mpos.data.data[x][k, j], old_ind)) > 0
-  #         replaceinds!(mpos.data.data[x][k, j], old_ind => dag(new_ind) )
-  #       else
-  #         !isempty(mpos.data.data[x][k, j]) && error("Problem in building Hamiltonians")
-  #         mpos.data.data[x][k, j] = mpos.data.data[x][k, j] * ITensor(dag(new_ind))
-  #       end
-  #     end
-  #   end
-  #end
   return mpos
 end
 

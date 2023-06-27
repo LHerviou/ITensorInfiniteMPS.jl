@@ -6,6 +6,5 @@ function unit_cell_terms(
 )
   #we assume that dict_coeffs has already been filtered, and is ready to be used
   opt = optimize_coefficients(dict_coeffs; prec=prec)
-  opt[["N", 1]] = -2.0
   return generate_Hamiltonian(opt)
 end
