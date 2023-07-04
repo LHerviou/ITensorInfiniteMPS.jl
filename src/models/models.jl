@@ -87,20 +87,26 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector; kwargs...)
   return InfiniteMPOMatrix(model, s, translator(s); kwargs...)
 end
 
+using TickTock
 function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; kwargs...)
   N = length(s)
+  println("Starting InfiniteSum MPO"); tick()
   temp_H = InfiniteSum{MPO}(model, s; kwargs...)
-  range_H = nrange(temp_H)[1]
+  tock()
   ls = CelledVector(
     [Index(ITensors.trivial_space(s[n]), "Link,c=1,n=$n") for n in 1:N], translator
   )
 
   mpos = [Matrix{ITensor}(undef, 1, 1) for i in 1:N]
+  println("Building the big matrix")
+  tick()
   for j in 1:N
     #For type stability
+    range_H = nrange(temp_H)[j]
     Hmat = fill(
-      ITensor(eltype(temp_H[1][1]), dag(s[j]), prime(s[j])), range_H + 1, range_H + 1
+      ITensor(eltype(temp_H[j][1]), dag(s[j]), prime(s[j])), range_H + 1, range_H + 1
     )
+    #Hmat = Matrix{ITensor}(undef, range_H + 1, range_H + 1)
     identity = op("Id", s[j])
     Hmat[1, 1] = identity
     Hmat[end, end] = identity
@@ -143,7 +149,7 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
           @assert (range_H - n) == 1
           @assert temp_mat[1, 1] == identity
           #@assert isempty(temp_mat[3, 1]) || iszero(temp_mat[3, 1])
-          Hmat[range_H + 1 - n, range_H - n] = temp_mat[2, 1]
+            Hmat[range_H + 1 - n, range_H - n] = temp_mat[2, 1]
           Hmat[end, range_H - n] += temp_mat[3, 1]  #LH This should do nothing #TODO check
         else
           error("Unexpected matrix form")
@@ -153,50 +159,58 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
     mpos[j] = Hmat
     #mpos[j] += dense(Hmat) * setelt(ls[j-1] => total_dim) * setelt(ls[j] => total_dim)
   end
+  tock()
   #unify_indices and add virtual indices to the empty tensors
   mpos = InfiniteMPOMatrix(mpos, translator)
+  println("Unification of indices")
+  tick()
   for x in 1:N
+    sd = dag(s[x])
+    sp = prime(s[x])
+    println("Getting index")
     left_inds = [
-      only(uniqueinds(mpos[x][end, j], mpos[x][1, 1])) for j in 2:(size(mpos[x], 2) - 1)
+      only(uniqueinds(mpos.data.data[x][j, 1], mpos.data.data[x][1, 1])) for j in 2:(size(mpos[x], 1) - 1)
     ]
     right_inds = [
-      only(uniqueinds(mpos[x + 1][j, 1], mpos[x + 1][1, 1])) for
+      only(uniqueinds(mpos.data.data[x][end, j], mpos.data.data[x][1, 1])) for j in 2:(size(mpos[x], 2) - 1)
+    ]
+    new_right_inds = [
+      dag(only(uniqueinds(mpos.data.data[mod1(x + 1, N)][j, 1], mpos.data.data[mod1(x + 1, N)][1, 1])) ) for
       j in 2:(size(mpos[x], 2) - 1)
     ]
-    for j in 1:size(mpos[x], 1)
-      for k in 2:(size(mpos[x], 2) - 1)
-        if length(commoninds(mpos.data.data[x][j, k], left_inds[k - 1])) > 0
-          replaceinds!(mpos.data.data[x][j, k], left_inds[k - 1] => dag(right_inds[k - 1]))
+    if x == N
+      for j in 1:length(new_right_inds)
+        new_right_inds[j] = translatecell(translator, new_right_inds[j], 1)
+      end
+    end
+    println("Updating")
+    for j in 2:size(mpos.data.data[x], 1)-1
+      for k in 2:(size(mpos.data.data[x], 2) - 1)
+        if !isempty(mpos[x][j, k])
+          replaceinds!(mpos.data.data[x][j, k], right_inds[k - 1] => new_right_inds[k - 1])
         else
-          !isempty(mpos.data.data[x][j, k]) && error("Problem in building Hamiltonians")
-          mpos.data.data[x][j, k] =
-            mpos.data.data[x][j, k] *
-            ITensor(eltype(mpos.data.data[x][j, k]), dag(right_inds[k - 1]))
+          mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), left_inds[j-1], sd, sp, dag(new_right_inds[k - 1]))
         end
       end
     end
-    for j in 2:(size(mpos[x + 1], 1) - 1)
-      for k in 1:size(mpos[x + 1], 2)
-        if x + 1 == N + 1
-          if length(commoninds(mpos[x + 1][j, k], right_inds[j - 1])) == 0
-            !isempty(mpos[x + 1][j, k]) && error("Problem in building Hamiltonians")
-            mpos.data.data[1][j, k] =
-              mpos.data.data[1][j, k] * ITensor(
-                eltype(mpos.data.data[1][j, k]),
-                translatecell(translator, right_inds[j - 1], -1),
-              )
-          end
+    for j in [1, size(mpos.data.data[x], 1)]
+      for k in 2:(size(mpos.data.data[x], 2) - 1)
+        if !isempty(mpos.data.data[x][j, k])
+          replaceinds!(mpos.data.data[x][j, k], right_inds[k - 1] => new_right_inds[k - 1])
         else
-          if length(commoninds(mpos.data[x + 1][j, k], right_inds[j - 1])) == 0
-            !isempty(mpos.data[x + 1][j, k]) && error("Problem in building Hamiltonians")
-            mpos.data.data[x + 1][j, k] =
-              mpos.data.data[x + 1][j, k] *
-              ITensor(eltype(mpos.data.data[x + 1][j, k]), right_inds[j - 1])
-          end
+          mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), sd, sp, dag(new_right_inds[k - 1]))
+        end
+      end
+    end
+    for j in 2:size(mpos.data.data[x], 1)-1
+      for k in [1, size(mpos.data.data[x], 2)]
+        if isempty(mpos.data.data[x][j, k])
+          mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), left_inds[j-1], sd, sp)
         end
       end
     end
   end
+  tock()
   return mpos
 end
 

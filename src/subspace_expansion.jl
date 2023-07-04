@@ -435,7 +435,7 @@ end
 
 
 function subspace_expansion(
-  theta::ITensor, env::ITensor, H::InfiniteMPO, b::Tuple{Int,Int}; maxdim, cutoff, newtags, α = 1e-2, svd_indices, kwargs...
+  theta::ITensor, env::ITensor, H::InfiniteMPO, b::Tuple{Int,Int}; maxdim, cutoff, newtags, α = 1e-6, svd_indices, kwargs...
 )
   extension = noprime( ((env * theta) * H[b[1]] ) * H[b[2]] )
   extension = extension * (α / norm(extension)) #LH: I am not sure the renormalization by norm(extension) is really needed here

@@ -443,6 +443,114 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
 end
 
 
+
+function idmrg_step_nolanczos_nonoise(iDM::iDMRGStructure{InfiniteMPO,ITensor}; maxdim=20, cutoff=1e-10, kwargs...)
+  N = nsites(iDM)
+  mid_chain = get(kwargs, :mid_chain, div(N, 2))
+
+  original_start = mod1(iDM.counter, N)
+  effective_Rs = [copy(iDM.R) for j in 1:mid_chain]
+  effective_Ls = ITensor[]
+  local_ener = 0
+  err = 0
+  s = siteinds(only, iDM.ψ)
+
+  #Building successive environments
+  site_looked = original_start + N - 1
+  while site_looked > original_start + mid_chain
+    effective_Rs[end] = apply_mpomatrix_right(effective_Rs[end], iDM.Hmpo[site_looked], iDM.ψ.AR[site_looked])
+    site_looked -= 1
+  end
+  for j in reverse(1:mid_chain-1)
+    effective_Rs[j] = copy(effective_Rs[j + 1])
+    effective_Rs[j] = apply_mpomatrix_right(effective_Rs[j], iDM.Hmpo[site_looked], iDM.ψ.AR[site_looked])
+    site_looked -= 1
+  end
+  #effective_Rs[end] = copy(effective_Rs[1])
+  #effective_Rs[end] = apply_mpomatrix_right(effective_Rs[end], iDM.Hmpo[site_looked], iDM.ψ.AR[site_looked])
+  #effective_Rs[end] = translatecell(translator(iDM), effective_Rs[end], 1)
+
+  current_L = copy(iDM.L)
+  for (count, start) in enumerate(original_start:original_start+mid_chain-1)
+    #build the local tensor start .... start + nb_site - 1
+    theta = iDM.ψ.C[start-1] * iDM.ψ.AR[start] * iDM.ψ.AR[start + 1]
+    left_indices = [only(commoninds(theta,  iDM.ψ.C[start-1] )) , s[start]]
+    right_indices = uniqueinds(theta, left_indices)
+    newtags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start + 1])))
+
+    U2, S2, V2 = svd(
+      theta,
+      left_indices;
+      maxdim=maxdim,
+      cutoff=cutoff,
+      lefttags=newtags,
+      righttags=newtags,
+      )
+      S2 = ITensors.denseblocks(S2)
+      #err = 1 - norm(S2)
+      #S2 = S2 / norm(S2)
+
+    err = 1 - norm(S2)
+    S2 = S2 / norm(S2)
+    iDM.ψ.AL[start] = U2
+    iDM.ψ.C[start] = S2#ITensors.denseblocks(S2)
+    if count != mid_chain
+      iDM.ψ.AR[start] = ortho_polar(U2 * S2, iDM.ψ.C[start - 1])
+    end
+    iDM.ψ.AR[start+1] = V2
+    if count == mid_chain
+      iDM.ψ.AL[start+1] = ortho_polar(S2*V2, iDM.ψ.C[start + 1])
+    end
+    #check_unitarity(V2, only(commoninds(V2, S2)))
+    #Advance the left environment as long as we are not finished
+    if count != mid_chain
+      #append!(effective_Ls, [current_L])
+      current_L = apply_mpomatrix_left(current_L, iDM.Hmpo[start], iDM.ψ.AL[start])
+    end
+  end
+  effective_Ls = [copy(current_L)]
+  for j in mid_chain:N-2
+    current_L = apply_mpomatrix_left(current_L, iDM.Hmpo[original_start+j-1], iDM.ψ.AL[original_start+j-1])
+    append!(effective_Ls, [copy(current_L)])
+  end
+  current_R = copy(iDM.R)
+  for (count, start) in reverse(collect(enumerate(original_start+mid_chain-1:original_start+N-2)))
+    #build the local tensor start .... start + nb_site - 1
+    theta = iDM.ψ.AL[start] * iDM.ψ.AL[start + 1] * iDM.ψ.C[start+1]
+    left_indices = commoninds(theta,  iDM.ψ.AL[start])
+    right_indices = uniqueinds(theta, left_indices)
+    newtags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start + 1])))
+
+    U2, S2, V2 = svd(
+      theta,
+      left_indices;
+      maxdim=maxdim,
+      cutoff=cutoff,
+      lefttags=newtags,
+      righttags=newtags,
+      )
+      S2 = ITensors.denseblocks(S2)
+      #err = 1 - norm(S2)
+      #S2 = S2 / norm(S2)
+    err = 1 - norm(S2)
+    S2 = S2 / norm(S2)
+
+    iDM.ψ.AL[start] = U2
+    iDM.ψ.C[start] = S2#ITensors.denseblocks(S2)
+    if count == 1
+      iDM.ψ.AR[start] = ortho_polar(U2 * S2, iDM.ψ.C[start - 1])
+    end
+
+    iDM.ψ.AR[start+1] = V2
+    iDM.ψ.AL[start+1] = ortho_polar(S2*V2, iDM.ψ.C[start + 1])
+
+    current_R = apply_mpomatrix_right(current_R, iDM.Hmpo[start+1], iDM.ψ.AR[start+1])
+  end
+  current_L = apply_mpomatrix_left(effective_Ls[1], iDM.Hmpo[original_start + mid_chain-1], iDM.ψ.AL[original_start + mid_chain-1])
+  return local_ener, err, current_L, current_R
+end
+
+
 function idmrg_step_with_noise(
   iDM::iDMRGStructure{InfiniteMPO,ITensor}; solver_tol=1e-8, maxdim=20, cutoff=1e-10, α = 1e-6, kwargs...
 )

@@ -55,14 +55,23 @@ end
 #translatecell(translator, T::ITensor, n::Integer) = translator(T, n)
 translatecell(translator::Function, T, n) = translator(T, n)
 function translatecell(translator::Function, T::ITensor, n::Integer)
+  if n == 0
+    return T
+  end
   return ITensors.setinds(T, translatecell(translator, inds(T), n))
 end
 translatecell(translator::Function, T::MPO, n::Integer) = translatecell.(translator, T, n)
 function translatecell(translator::Function, T::Matrix{ITensor}, n::Integer)
+  if n == 0
+    return T
+  end
   return translatecell.(translator, T, n)
 end
-translatecell(translator::Function, i::Index, n::Integer) = translator(i, n)
+translatecell(translator::Function, i::Index, n::Integer) = n == 0 ? i : translator(i, n)
 function translatecell(translator::Function, is::Union{<:Tuple,<:Vector}, n::Integer)
+  if n == 0
+    return is
+  end
   return translatecell.(translator, is, n)
 end
 
