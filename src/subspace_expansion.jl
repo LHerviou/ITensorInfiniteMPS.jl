@@ -438,21 +438,37 @@ function subspace_expansion(
   theta::ITensor, env::ITensor, H::InfiniteMPO, b::Tuple{Int,Int}; maxdim, cutoff, newtags, α = 1e-6, svd_indices, kwargs...
 )
   extension = noprime( ((env * theta) * H[b[1]] ) * H[b[2]] )
+  extension -= (dag(theta) * extension) * theta
   extension = extension * (α / norm(extension)) #LH: I am not sure the renormalization by norm(extension) is really needed here
+
   supp_index = only(commoninds(H[b[2]], H[b[2] + b[2] - b[1]]))
   dummy_index = Index(QN() => 1; dir=dir(supp_index))
-  dum = ITensor(dummy_index); dum[1] = 1
+  dum = onehot(dummy_index => 1);
 
   theta_extended, new_index = ITensors.directsum(
   theta  * dum => dummy_index,
   extension => supp_index;
   tags="Temporary",
   )
-  cc = combiner(new_index)
-  closure = ITensor(new_index); closure[1] = 1;
+  # cc = combiner(new_index)
+  # closure = onehot(new_index => 1);
+  # #println(norm(theta - theta_extended*dag(closure)))
+  # U2, S2, V2 = svd(
+  # theta_extended * cc,
+  # svd_indices;
+  # maxdim=maxdim,
+  # cutoff=0,#cutoff,
+  # lefttags=newtags,
+  # righttags=newtags,
+  # use_relative_cutoff=false,
+  # use_absolute_cutoff = true,
+  # mindim = maxdim
+  # )
+  # V2 = V2 * (dag(cc) * dag(closure))
+  closure = onehot(new_index => 1);
   #println(norm(theta - theta_extended*dag(closure)))
   U2, S2, V2 = svd(
-  theta_extended * cc,
+  theta_extended,
   svd_indices;
   maxdim=maxdim,
   cutoff=cutoff,
@@ -460,9 +476,13 @@ function subspace_expansion(
   righttags=newtags,
   use_relative_cutoff=false,
   use_absolute_cutoff = true,
-  #mindim = maxdim
+  mindim = maxdim
   )
-  V2 = V2 * (dag(cc) * dag(closure))
+  V2 = V2 * dag(closure)
+  # temp = norm(theta - U2 * S2 * V2)
+  # if temp > 1e-6
+  #   println("Norm diff of theta: $temp")
+  # end
   return U2, S2, V2
 end
 
