@@ -1,3 +1,5 @@
+using TickTock
+
 struct Model{model} end
 Model(model::Symbol) = Model{model}()
 Model(model::String) = Model{Symbol(model)}()
@@ -90,13 +92,15 @@ end
 function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; kwargs...)
   N = length(s)
   println("Starting InfiniteSum MPO");
+  tick()
   temp_H = InfiniteSum{MPO}(model, s; kwargs...)
+  tock()
+  println("Building the big matrix")
   ls = CelledVector(
     [Index(ITensors.trivial_space(s[n]), "Link,c=1,n=$n") for n in 1:N], translator
   )
 
   mpos = [Matrix{ITensor}(undef, 1, 1) for i in 1:N]
-  println("Building the big matrix")
   for j in 1:N
     #For type stability
     range_H = nrange(temp_H)[j]
@@ -158,7 +162,9 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
   end
   #unify_indices and add virtual indices to the empty tensors
   mpos = InfiniteMPOMatrix(mpos, translator)
+  tock()
   println("Unification of indices")
+  tick()
   for x in 1:N
     sd = dag(s[x])
     sp = prime(s[x])
@@ -203,6 +209,7 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
       end
     end
   end
+  tock()
   return mpos
 end
 
