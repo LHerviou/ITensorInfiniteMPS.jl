@@ -96,6 +96,7 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
   temp_H = InfiniteSum{MPO}(model, s; kwargs...)
   tock()
   println("Building the big matrix")
+  tick()
   ls = CelledVector(
     [Index(ITensors.trivial_space(s[n]), "Link,c=1,n=$n") for n in 1:N], translator
   )
