@@ -87,19 +87,16 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector; kwargs...)
   return InfiniteMPOMatrix(model, s, translator(s); kwargs...)
 end
 
-using TickTock
 function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; kwargs...)
   N = length(s)
-  println("Starting InfiniteSum MPO"); tick()
+  println("Starting InfiniteSum MPO");
   temp_H = InfiniteSum{MPO}(model, s; kwargs...)
-  tock()
   ls = CelledVector(
     [Index(ITensors.trivial_space(s[n]), "Link,c=1,n=$n") for n in 1:N], translator
   )
 
   mpos = [Matrix{ITensor}(undef, 1, 1) for i in 1:N]
   println("Building the big matrix")
-  tick()
   for j in 1:N
     #For type stability
     range_H = nrange(temp_H)[j]
@@ -159,15 +156,12 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
     mpos[j] = Hmat
     #mpos[j] += dense(Hmat) * setelt(ls[j-1] => total_dim) * setelt(ls[j] => total_dim)
   end
-  tock()
   #unify_indices and add virtual indices to the empty tensors
   mpos = InfiniteMPOMatrix(mpos, translator)
   println("Unification of indices")
-  tick()
   for x in 1:N
     sd = dag(s[x])
     sp = prime(s[x])
-    println("Getting index")
     left_inds = [
       only(uniqueinds(mpos.data.data[x][j, 1], mpos.data.data[x][1, 1])) for j in 2:(size(mpos[x], 1) - 1)
     ]
@@ -183,13 +177,12 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
         new_right_inds[j] = translatecell(translator, new_right_inds[j], 1)
       end
     end
-    println("Updating")
     for j in 2:size(mpos.data.data[x], 1)-1
       for k in 2:(size(mpos.data.data[x], 2) - 1)
         if !isempty(mpos[x][j, k])
           replaceinds!(mpos.data.data[x][j, k], right_inds[k - 1] => new_right_inds[k - 1])
         else
-          mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), left_inds[j-1], sd, sp, dag(new_right_inds[k - 1]))
+          mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), left_inds[j-1], sd, sp, new_right_inds[k - 1])
         end
       end
     end
@@ -198,7 +191,7 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
         if !isempty(mpos.data.data[x][j, k])
           replaceinds!(mpos.data.data[x][j, k], right_inds[k - 1] => new_right_inds[k - 1])
         else
-          mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), sd, sp, dag(new_right_inds[k - 1]))
+          mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), sd, sp, new_right_inds[k - 1])
         end
       end
     end
@@ -210,7 +203,6 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
       end
     end
   end
-  tock()
   return mpos
 end
 
