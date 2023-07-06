@@ -182,3 +182,8 @@ end
 # TODO: make this definition AbstractMPS
 # Handle orthogonality center correctly
 Base.getindex(ψ::MPS, r::UnitRange{Int}) = MPS([ψ[n] for n in r])
+
+
+function ITensors.NDTensors.blockoffsets(::EmptyStorage{T, NDTensors.BlockSparse{Q, Vector{R}, N}}) where {T, Q, R, N}
+  return ITensors.NDTensors.BlockOffsets{N}()
+end

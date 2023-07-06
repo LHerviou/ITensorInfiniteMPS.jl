@@ -635,6 +635,7 @@ end
 function build_three_projectors_from_index(is::Index; kwargs...)
   old_dim = dim(is)
   new_tags = get(kwargs, :tags, tags(is))
+  split = get(kwargs, :split, true)
   #Build the local projectors.
   #We have to differentiate between the dense and the QN case
   #Note that as far as I know, the MPO even dense is always guaranteed to have identities at both corners
@@ -647,7 +648,7 @@ function build_three_projectors_from_index(is::Index; kwargs...)
     for x in 1:(new_ind.space)
       mat[x, x + 1] = 1
     end
-    middle = ITensor(copy(mat), new_ind, dag(is))
+    middle = ITensor(mat, new_ind, dag(is))
   else
     new_ind = Index(is.space[2:(end - 1)]; dir=dir(is), tags=new_tags)
     middle = ITensors.BlockSparseTensor(
@@ -661,6 +662,10 @@ function build_three_projectors_from_index(is::Index; kwargs...)
       ITensors.blockview(middle, Block(x, x + 1)) .= diagm(0 => ones(dim_block))
     end
     middle = itensor(middle)
+    if !split
+      cb = combiner(new_ind, dir = dir(new_ind), tags = tags(new_ind))
+      middle =  cb * middle
+    end
   end
   return top, middle, bottom
 end
@@ -689,11 +694,11 @@ function convert_itensor_33matrix(tensor; leftdir=ITensors.In, kwargs...)
   #Build the local projectors.
   left_tags = get(kwargs, :left_tags, tags(left_ind))
   top_left, middle_left, bottom_left = build_three_projectors_from_index(
-    left_ind; tags=left_tags
+    left_ind; tags=left_tags, kwargs...
   )
   right_tags = get(kwargs, :righ_tags, tags(right_ind))
   top_right, middle_right, bottom_right = build_three_projectors_from_index(
-    right_ind; tags=right_tags
+    right_ind; tags=right_tags, kwargs...
   )
 
   matrix = fill(op("Zero", local_sit), 3, 3)
@@ -716,11 +721,11 @@ function convert_itensor_3vector(
   old_ind = only(uniqueinds(tensor, sit))
   if dir(old_ind) == leftdir || last
     new_tags = get(kwargs, :left_tags, tags(old_ind))
-    top, middle, bottom = build_three_projectors_from_index(old_ind; tags=new_tags)
+    top, middle, bottom = build_three_projectors_from_index(old_ind; tags=new_tags, kwargs...)
     vector = fill(op("Zero", local_sit), 3, 1)
   else
     new_tags = get(kwargs, :right_tags, tags(old_ind))
-    top, middle, bottom = build_three_projectors_from_index(old_ind; tags=new_tags)
+    top, middle, bottom = build_three_projectors_from_index(old_ind; tags=new_tags, kwargs...)
     vector = fill(op("Zero", local_sit), 1, 3)
   end
   for (idx, proj) in enumerate([top, middle, bottom])
@@ -854,12 +859,13 @@ function scalar_product(A::Vector{ITensor}, B::Vector{ITensor})
   return C
 end
 
-
-function ITensors.splitblocks(H::InfiniteMPOMatrix)
+function ITensors.splitblocks!(H::InfiniteMPOMatrix)
   N = nsites(H)
   for j in 1:N
-    for n in 1:length(H)
-      H[j][n] = splitblocks(H[j][n])
+    ls = Dict()
+    rs = Dict()
+    for n in 1:length(H[j])
+        H.data.data[j][n] = ITensors.splitblocks(H.data.data[j][n])
     end
   end
   return H

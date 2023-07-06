@@ -23,8 +23,8 @@ function InfiniteSum{T}(model::Model, s::Vector; kwargs...) where {T}
   return InfiniteSum{T}(model, infsiteinds(s); kwargs...)
 end
 
-function InfiniteSum{MPO}(model::Model, s::CelledVector; kwargs...)
-  return InfiniteSum{MPO}(opsum_infinite(model, cell_length(s); kwargs...), s)
+function InfiniteSum{MPO}(model::Model, s::CelledVector; split = true, kwargs...)
+  return InfiniteSum{MPO}(opsum_infinite(model, cell_length(s); kwargs...), s; split)
 end
 
 function InfiniteSum{ITensor}(model::Model, s::CelledVector; kwargs...)
@@ -63,7 +63,7 @@ function shift_sites(opsum::OpSum, shift::Int)
   return shifted_opsum
 end
 
-function InfiniteSum{MPO}(opsum::OpSum, s::CelledVector)
+function InfiniteSum{MPO}(opsum::OpSum, s::CelledVector; split = true)
   n = cell_length(s)
   nrange = 0 # Maximum operator support
   opsums = [OpSum() for _ in 1:n]
@@ -74,10 +74,17 @@ function InfiniteSum{MPO}(opsum::OpSum, s::CelledVector)
     opsums[j1] += o
   end
   shifted_opsums = [shift_sites(opsum, -first_site(opsum) + 1) for opsum in opsums]
-  mpos = [
-    splitblocks(linkinds, MPO(shifted_opsums[j], [s[k] for k in j:(j + nrange - 1)])) for
-    j in 1:n
-  ]
+  if split
+    mpos = [
+      splitblocks(linkinds, MPO(shifted_opsums[j], [s[k] for k in j:(j + nrange - 1)])) for
+      j in 1:n
+    ]
+  else
+    mpos = [
+      MPO(shifted_opsums[j], [s[k] for k in j:(j + nrange - 1)]) for
+      j in 1:n
+    ]
+  end
   return InfiniteSum{MPO}(mpos, translator(s))
 end
 
@@ -90,6 +97,7 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector; kwargs...)
 end
 
 function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; kwargs...)
+  split = get(kwargs, :split, true)
   N = length(s)
   println("Starting InfiniteSum MPO");
   tick()
@@ -131,6 +139,7 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; 
           else
             nothing
           end,
+          split=split
         )
         if size(temp_mat) == (3, 3)
           @assert iszero(temp_mat[1, 2])
@@ -326,4 +335,9 @@ function ITensors.ITensor(model::Model, s::CelledVector, n::Int64; kwargs...)
 
   # Deprecated version
   # return contract(MPO(model, s, n; kwargs...))
+end
+
+function Base.:+(A::InfiniteSum{MPO}...)
+    new_mpos = [add([A[x].data.data[n] for x in 1:length(A)]...) for n in 1:nsites(A[1])]
+    return InfiniteSum{MPO}(new_mpos, translator(A[1]))
 end
