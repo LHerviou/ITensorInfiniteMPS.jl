@@ -80,7 +80,8 @@ function LinearAlgebra.qr(
     QRb = qr(blockT; full=full, positive=positive)#; kwargs...)
     if isnothing(QRb)
       println("Empty matrix")
-      return nothing
+      continue
+      #return nothing
     end
     Qb, Rb = QRb
     if dilatation == 1
@@ -104,6 +105,7 @@ function LinearAlgebra.qr(
       ElT, undef, Block{2}[Block(b[1], b[2]) for (n, b) in enumerate(eachnzblock(T))], indsR
     )
     for (n, b) in enumerate(eachnzblock(T))
+      !isdefined(Qs, n) && continue
       qb = Block(b[1], b[1])
       rb = Block(b[1], b[2])
       ITensors.blockview(Q, qb) .= Array(Qs[n]) #I do not get why this bug when Array(ITensors.blockview(Q, qb)) .= Qs[n] does not
@@ -114,6 +116,7 @@ function LinearAlgebra.qr(
     centerind_space = Vector{Pair{QN,Int64}}()
     seen = Dict()
     for (n, b) in enumerate(eachnzblock(T))
+      !isdefined(Qs, n) && continue
       append!(centerind_space, [
         if direction == dir(r)
           r.space[b[2]].first => size(Rs[n], 1)
@@ -140,6 +143,7 @@ function LinearAlgebra.qr(
       ElT, undef, Block{2}[Block(seen[b[2]], b[2]) for (n, b) in enumerate(eachnzblock(T))], indsR
     )
     for (n, b) in enumerate(eachnzblock(T))
+      !isdefined(Qs, n) && continue
       qb = Block(b[1], seen[b[2]])
       rb = Block(seen[b[2]], b[2])
       ITensors.blockview(Q, qb) .= Qs[n]
