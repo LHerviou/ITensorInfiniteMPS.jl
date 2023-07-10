@@ -79,6 +79,7 @@ function LinearAlgebra.qr(
     blockT = ITensors.blockview(T, b)
     QRb = qr(blockT; full=full, positive=positive)#; kwargs...)
     if isnothing(QRb)
+      println("Empty matrix")
       return nothing
     end
     Qb, Rb = QRb
