@@ -74,6 +74,7 @@ function LinearAlgebra.qr(
 
   Qs = Vector{ITensors.DenseTensor{ElT,2}}(undef, nnzblocks(T))
   Rs = Vector{ITensors.DenseTensor{ElT,2}}(undef, nnzblocks(T))
+  list_nzBlocks = Block{2}[]
 
   for (n, b) in enumerate(eachnzblock(T))
     blockT = ITensors.blockview(T, b)
@@ -83,6 +84,7 @@ function LinearAlgebra.qr(
       continue
       #return nothing
     end
+    append!(list_nzBlocks, [b])
     Qb, Rb = QRb
     if dilatation == 1
       Qs[n] = Qb
@@ -99,10 +101,10 @@ function LinearAlgebra.qr(
     indsQ = [inds(T)[1], centerind]
     indsR = [dag(centerind), inds(T)[2]]
     Q = ITensors.BlockSparseTensor(
-      ElT, undef, Block{2}[Block(b[1], b[1]) for (n, b) in enumerate(eachnzblock(T))], indsQ #Something happened to blocks or collect
+      ElT, undef, Block{2}[Block(b[1], b[1]) for b in list_nzBlocks], indsQ #Something happened to blocks or collect
     )
     R = ITensors.BlockSparseTensor(
-      ElT, undef, Block{2}[Block(b[1], b[2]) for (n, b) in enumerate(eachnzblock(T))], indsR
+      ElT, undef, Block{2}[Block(b[1], b[2]) for b in list_nzBlocks], indsR
     )
     for (n, b) in enumerate(eachnzblock(T))
       !isdefined(Qs, n) && continue
@@ -115,7 +117,7 @@ function LinearAlgebra.qr(
     _, r = inds(T)
     centerind_space = Vector{Pair{QN,Int64}}()
     seen = Dict()
-    for (n, b) in enumerate(eachnzblock(T))
+    for (n, b) in list_nzBlocks
       !isdefined(Qs, n) && continue
       append!(centerind_space, [
         if direction == dir(r)
@@ -137,10 +139,10 @@ function LinearAlgebra.qr(
     indsR = [dag(centerind), inds(T)[2]]
 
     Q = ITensors.BlockSparseTensor(
-      ElT, undef, Block{2}[Block(b[1], seen[b[2]]) for b in eachnzblock(T)], indsQ
+      ElT, undef, Block{2}[Block(b[1], seen[b[2]]) for b in list_nzBlocks], indsQ
     )
     R = ITensors.BlockSparseTensor(
-      ElT, undef, Block{2}[Block(seen[b[2]], b[2]) for (n, b) in enumerate(eachnzblock(T))], indsR
+      ElT, undef, Block{2}[Block(seen[b[2]], b[2]) for b in list_nzBlocks], indsR
     )
     for (n, b) in enumerate(eachnzblock(T))
       !isdefined(Qs, n) && continue
