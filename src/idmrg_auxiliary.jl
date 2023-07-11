@@ -93,8 +93,9 @@ function LinearAlgebra.qr(
       continue
       #return nothing
     end
-    append!(list_nzBlocks, [(n, b)])
     Qb, Rb = QRb
+    min(size(Rb)) == 0 && continue
+    append!(list_nzBlocks, [(n, b)])
     if dilatation == 1
       Qs[n] = Qb
       Rs[n] = Rb
