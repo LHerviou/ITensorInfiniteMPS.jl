@@ -74,7 +74,7 @@ function LinearAlgebra.qr(
 
   Qs = Vector{ITensors.DenseTensor{ElT,2}}(undef, nnzblocks(T))
   Rs = Vector{ITensors.DenseTensor{ElT,2}}(undef, nnzblocks(T))
-  list_nzBlocks = Tuple{n, Block{2}}[]
+  list_nzBlocks = Tuple{Int64, Block{2}}[]
 
   for (n, b) in enumerate(eachnzblock(T))
     blockT = ITensors.blockview(T, b)
