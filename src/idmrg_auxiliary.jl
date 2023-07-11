@@ -32,15 +32,13 @@ function LinearAlgebra.qr(A::ITensor, Linds...; kwargs...)
   settags!(Q, tags, q)
   settags!(R, tags, q)
   q = settags(q, tags)
-  println("Iteration")
-  println("Tensor Q of norm $(norm(Q))")
-  println(inds(Q));
-  println("Tensor R of norm $(norm(R))")
-  println(inds(R));
-  println("Center Index")
-  println(q);
-  #println(left_combiner);
-  #println(right_combiner);
+  # println("Iteration")
+  # println("Tensor Q of norm $(norm(Q))")
+  # println(inds(Q));
+  # println("Tensor R of norm $(norm(R))")
+  # println(inds(R));
+  # println("Center Index")
+  # println(q);
   return dag(left_combiner) * Q, R * dag(right_combiner), q
 end
 
