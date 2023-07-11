@@ -32,6 +32,10 @@ function LinearAlgebra.qr(A::ITensor, Linds...; kwargs...)
   settags!(Q, tags, q)
   settags!(R, tags, q)
   q = settags(q, tags)
+  println(Q); println(R);
+  println(q);
+  println(left_combiner);
+  println(right_combiner);
   return dag(left_combiner) * Q, R * dag(right_combiner), q
 end
 
