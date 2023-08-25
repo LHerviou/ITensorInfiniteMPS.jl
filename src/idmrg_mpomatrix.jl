@@ -217,6 +217,13 @@ function advance_environments(H::iDMRGStructure{InfiniteMPOMatrix,Vector{ITensor
   end
 end
 
+function advance_environments(H::iDMRGStructure{InfiniteMPOMatrix,Vector{ITensor}}, n::Int64)
+  for j in 1:n
+    advance_environments(H)
+  end
+end
+
+
 function set_environments_defaultposition(
   H::iDMRGStructure{InfiniteMPOMatrix,Vector{ITensor}}
 )
