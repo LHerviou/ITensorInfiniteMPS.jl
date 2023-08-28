@@ -527,3 +527,45 @@ function convert_impo(H::InfiniteMPOMatrix, L::Vector{ITensor}, R::Vector{ITenso
   replaceind!(newR, new_idxr => only(commoninds(new_H[nsites(H)+1], new_H[nsites(H)])))
   return new_H, newL, newR
 end
+
+
+
+function fuse_legs!(H::InfiniteMPOMatrix, L::Vector{ITensor}, R::Vector{ITensor})
+  N = nsites(H)
+  for j in 1:N-1
+    right_link = only(commoninds(H[j][2, 2], H[j+1][2, 2]))
+    comb = combiner(right_link, tags = tags(right_link) )
+    comb_ind = combinedind(comb)
+    for k in 1:3
+      if isempty(H[j][k, 2])
+        H.data.data[j][k, 2] = ITensor(Float64, uniqueinds(H[j][k, 2], right_link)..., comb_ind)
+      else
+        H.data.data[j][k, 2] = H[j][k, 2] * comb
+      end
+      if isempty(H[j+1][2, k])
+        H.data.data[j+1][2, k] = ITensor(Float64, uniqueinds(H[j+1][2, k], dag(right_link))..., dag(comb_ind))
+      else
+        H.data.data[j+1][2, k] = H[j+1][2, k] * dag(comb)
+      end
+    end
+  end
+  right_link = only(commoninds(H[N][2, 2], H[N+1][2, 2]))
+  comb = combiner(right_link, tags = tags(right_link) )
+  comb_ind = combinedind(comb)
+  comb2 = translatecell(translator(H), comb, -1)
+  comb_ind2 = translatecell(translator(H), comb_ind, -1)
+  for k in 1:3
+    if isempty(H[N][k, 2])
+      H.data.data[N][k, 2] = ITensor(Float64, uniqueinds(H[N][k, 2], right_link)..., comb_ind)
+    else
+      H.data.data[N][k, 2] = H[N][k, 2] * comb
+    end
+    if isempty(H[1][2, k])
+      H.data.data[1][2, k] = ITensor(Float64, uniqueinds(H[1][2, k], dag(translatecell(translator(H), right_link, -1)))..., dag(comb_ind2))
+    else
+      H.data.data[1][2, k] = H[1][2, k] * dag(comb2)
+    end
+  end
+  L[2] = L[2] * comb2
+  R[2] = R[2] * dag(comb)
+end
