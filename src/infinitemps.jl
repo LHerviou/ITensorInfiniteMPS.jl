@@ -11,6 +11,7 @@ mutable struct InfiniteMPS <: AbstractInfiniteMPS
   rlim::Int #RealInfinity
   reverse::Bool
 end
+InfiniteMPS(  data::CelledVector{ITensor}) = InfiniteMPS(data, 0, length(data), false)
 
 translator(ψ::InfiniteMPS) = ψ.data.translator
 #
