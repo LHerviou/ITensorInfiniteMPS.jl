@@ -193,5 +193,5 @@ function ITensors.NDTensors.contraction_output(
   return NDTensors.EmptyTensor(promote_type(eltype(A), eltype(B)), label)
 end
 
-NDTensors.one(x::NDTensors.EmptyNumber) = NDTensors.EmptyNumber()
+#NDTensors.one(x::NDTensors.EmptyNumber) = NDTensors.EmptyNumber()
 NDTensors.convert(::Type{NDTensors.EmptyNumber}, x::Float64) = NDTensors.EmptyNumber()
