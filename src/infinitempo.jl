@@ -323,8 +323,13 @@ function matrixITensorToITensor(H::Vector{ITensor}, com_inds; rev=false, kwargs.
       append!(elements, [T[b]])
     end
   end
+  #if length(elements) == 0
+    T = Float64
+  #else
+  #  T = eltype(elements[1])
+  #end
   Hf = ITensors.BlockSparseTensor(
-    eltype(elements[1]), undef, temp_block, (com_inds..., new_left_index)
+    T, undef, temp_block, (com_inds..., new_left_index)
   )
   for (n, b) in enumerate(temp_block)
     ITensors.blockview(Hf, b) .= elements[n]
