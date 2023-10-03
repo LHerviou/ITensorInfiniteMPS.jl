@@ -19,14 +19,14 @@ function ITensors.NDTensors.qr_positive(M::AbstractMatrix; full=false, tol = 1e-
   return (Q[:, kept_indices], R[kept_indices, :] * sparseQR.P')
 end
 
-function LinearAlgebra.qr(A::ITensor, Linds...; kwargs...)
+function  myqr(A::ITensor, Linds...; kwargs...)
   tags::TagSet = get(kwargs, :tags, "Link,qr")
   left_combiner = combiner(commoninds(A, ITensors.indices(Linds)))
   right_combiner = combiner(uniqueinds(A, ITensors.indices(Linds)))
 
   temp_A = left_combiner * (A * right_combiner)
 
-  QT, RT = qr(ITensors.tensor(temp_A); kwargs...)
+  QT, RT = myqr(ITensors.tensor(temp_A); kwargs...)
   Q = itensor(QT); R = itensor(RT);
   q = commonind(Q, R)
   settags!(Q, tags, q)
@@ -42,7 +42,7 @@ function LinearAlgebra.qr(A::ITensor, Linds...; kwargs...)
   return dag(left_combiner) * Q, R * dag(right_combiner), q
 end
 
-function LinearAlgebra.qr(
+function myqr(
   T::ITensors.NDTensors.DenseTensor{ElT,2,IndsT}; kwargs...
 ) where {ElT,IndsT}
   positive = get(kwargs, :positive, false)
@@ -71,7 +71,7 @@ function LinearAlgebra.qr(
   return Q, R
 end
 
-function LinearAlgebra.qr(
+function myqr(
   T::ITensors.NDTensors.BlockSparseMatrix{ElT}; kwargs...
 ) where {ElT}
   full::Bool = get(kwargs, :full, false)
@@ -82,10 +82,9 @@ function LinearAlgebra.qr(
   Qs = Vector{ITensors.DenseTensor{ElT,2}}(undef, nnzblocks(T))
   Rs = Vector{ITensors.DenseTensor{ElT,2}}(undef, nnzblocks(T))
   list_nzBlocks = Tuple{Int64, Block{2}}[]
-
   for (n, b) in enumerate(eachnzblock(T))
     blockT = ITensors.blockview(T, b)
-    QRb = qr(blockT; full=full, positive=positive)#; kwargs...)
+    QRb = myqr(blockT; full=full, positive=positive)#; kwargs...)
     if isnothing(QRb)
       println("Empty matrix")
       continue

@@ -1,4 +1,4 @@
-function ITensors.space(::SiteType"FermionK", pos::Int; p=1, q=1, conserve_momentum=true)
+optimize_coefficientsfunction ITensors.space(::SiteType"FermionK", pos::Int; p=1, q=1, conserve_momentum=true)
   if !conserve_momentum
     return [QN("Nf", -p) => 1, QN("Nf", q - p) => 1]
   else
@@ -9,6 +9,10 @@ function ITensors.space(::SiteType"FermionK", pos::Int; p=1, q=1, conserve_momen
   end
 end
 
+
+function ITensors.op!(Op::ITensor, ::OpName"Nbar", ::SiteType"Fermion", s::Index)
+  return Op[s' => 1, s => 1] = 1.0
+end
 # Forward all op definitions to Fermion
 function ITensors.op!(Op::ITensor, opname::OpName, ::SiteType"FermionK", s::Index...)
   return ITensors.op!(Op, opname, SiteType("Fermion"), s...)
@@ -316,6 +320,10 @@ function filter_op!(lis, name)
         popat!(lis, x + 1)
         popat!(name, x + 1)
         name[x] = "N"
+      elseif name[x] == "C" && name[x + 1] == "Cdag"
+        popat!(lis, x + 1)
+        popat!(name, x + 1)
+        name[x] = "Nbar"
       else
         print("Wrong order in filter_op")
       end
@@ -324,7 +332,7 @@ function filter_op!(lis, name)
   end
 end
 
-function optimize_coefficients(coeff::Dict; prec=1e-12)
+function optimize_coefficients(coeff::Dict; prec=1e-12, PHsym = false)
   optimized_dic = Dict()
   for (ke, v) in coeff
     if abs(v) < prec
@@ -333,7 +341,7 @@ function optimize_coefficients(coeff::Dict; prec=1e-12)
     if mod(length(ke), 2) == 1
       error("Odd number of operators is not implemented")
     end
-    name = vcat(fill("Cdag", length(ke)÷2), fill("C", length(ke)÷2))
+    name = PHsym ? vcat(fill("C", length(ke)÷2), fill("Cdag", length(ke)÷2)) :  vcat(fill("Cdag", length(ke)÷2), fill("C", length(ke)÷2))
     k = Base.copy(ke)
     sg = get_perm!(k, name)
     filter_op!(k, name)
