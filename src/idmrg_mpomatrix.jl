@@ -410,6 +410,8 @@ function idmrg(
     if j > 5
       if maximum([abs(eners[end - j + 1] - eners[end - j]) for j in 1:5]) < ener_tol
         println("Early finish")
+        flush(stdout)
+        flush(stderr)
         return eners, errs, entrs
       end
     end

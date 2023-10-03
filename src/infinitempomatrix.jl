@@ -91,11 +91,11 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
   dummy_tensor = ITensor(dummy_index); dummy_tensor[1] = 1
   temp_M2, fused_ind= directsum(new_H[2, 2] => to_fuse_ind, new_H[3, 2]*dummy_tensor => dummy_index;
     tags = tags(dummy_index) )
-  unfuse1, unfuse2 = ITensors.directsum_itensors(to_fuse_ind, dummy_index, fused_ind)
+  unfuse1, unfuse2 = ITensors.directsum_projectors(Float64, Float64, to_fuse_ind, dummy_index, fused_ind)
   unfuse2 = unfuse2 * dummy_tensor
 
   right_ind2 = only(uniqueinds(kept_inds, s))
-  cL2 = combiner(fused_ind; tags=tags(fused_ind))
+  cL2 = combiner(fused_ind; tags=tags(fused_ind), dir = dir(fused_ind))
   cR2 = combiner(right_ind2)
   cLind2 = combinedind(cL2)
   cRind2 = combinedind(cR2)
@@ -103,7 +103,7 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
   unfuse1 = unfuse1 * cL2
   unfuse2 = unfuse2 * cL2
 
-  Q, R, new_right_ind = qr(
+  Q, R, new_right_ind = ITensorInfiniteMPS.myqr(
      temp_M2,
      uniqueinds(temp_M2, cRind2),
      tags=tags(right_ind2),
@@ -279,7 +279,7 @@ function block_QR_for_right_canonical(H::Matrix{ITensor})
   dummy_tensor = ITensor(dummy_index); dummy_tensor[1] = 1
   temp_M, fused_ind= directsum( new_H[2, 1]*dummy_tensor => dummy_index, new_H[2, 2] => to_fuse_ind;
     tags = tags(dummy_index) )
-  unfuse2, unfuse1 = ITensors.directsum_itensors(dummy_index, to_fuse_ind, fused_ind)
+  unfuse2, unfuse1 = ITensors.directsum_projectors(Float64, Float64, dummy_index, to_fuse_ind, fused_ind)
   unfuse2 = unfuse2 * dummy_tensor
 
   left_ind = only(uniqueinds(kept_inds, s))
@@ -291,7 +291,7 @@ function block_QR_for_right_canonical(H::Matrix{ITensor})
   unfuse1 = unfuse1 * cR
   unfuse2 = unfuse2 * cR
 
-  Q, R, new_left_ind = qr(
+  Q, R, new_left_ind = myqr(
      temp_M,
      uniqueinds(temp_M, cLind),
      tags=tags(left_ind),
@@ -438,7 +438,6 @@ function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = not
     end
   end
   HL, Tl1, L = left_canonical(smallH; left_env, kwargs...)
-
   if !isnothing(right_env)
     right_env = Tl1[nsites(H)] * right_env
   end
