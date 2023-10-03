@@ -26,6 +26,30 @@ function ITensors.has_fermion_string(on::OpName"c†", st::SiteType"FermionK")
   return has_fermion_string(alias(on), st)
 end
 
+function ITensors.space(::SiteType"FerBilK", pos::Int; p=1, q=1, conserve_momentum=true)
+  actual_pos = div(pos-1, 2) + 1
+  if !conserve_momentum
+    return [QN("Nf", -p) => 1, QN("Nf", q - p) => 1]
+  else
+    return [
+      QN(("Nf", -p), ("NfMom", -p * actual_pos)) => 1,
+      QN(("Nf", q - p), ("NfMom", (q - p) * actual_pos)) => 1,
+    ]
+  end
+end
+
+# Forward all op definitions to Fermion
+function ITensors.op!(Op::ITensor, opname::OpName, ::SiteType"FerBilK", s::Index...)
+  return ITensors.op!(Op, opname, SiteType("Fermion"), s...)
+end
+ITensors.has_fermion_string(::OpName"C", ::SiteType"FerBilK") = true
+function ITensors.has_fermion_string(on::OpName"c", st::SiteType"FerBilK")
+  return has_fermion_string(alias(on), st)
+end
+ITensors.has_fermion_string(::OpName"Cdag", ::SiteType"FerBilK") = true
+function ITensors.has_fermion_string(on::OpName"c†", st::SiteType"FerBilK")
+  return has_fermion_string(alias(on), st)
+end
 
 function unit_cell_terms(
   ::Model"fqhe_2b_pot"; Ly::Float64, Vs::Array{Float64,1}, prec::Float64
