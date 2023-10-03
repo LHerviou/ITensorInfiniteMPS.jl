@@ -26,7 +26,7 @@ end
 # standard is 1 2 3 ... Ly in the y direction
 # zipped is 1 Ly 2 Ly-1 ...
 function unit_cell_terms(::Model"pipSC"; Ly::Int64 = 4, tx = 1., ty = 1., Dx = 1., Dy = 1.0 *1im, mu = 0., order = :standard)
-  opsum = OpSum{promote_type(typeof(tx), typeof(ty), typeof(Dx), typeof(Dy), typeof(mu))}()
+  opsum = OpSum{ComplexF64}()
   #Easy part: tx
   if tx != 0
     for j in 1:Ly
@@ -93,6 +93,9 @@ function unit_cell_terms(::Model"pipSC"; Ly::Int64 = 4, tx = 1., ty = 1., Dx = 1
   return opsum
 end
 
+
+ #Not working, understand why?
+
 """
   We work here in k space in the momentum direction.
   Two possible ordering:
@@ -136,14 +139,6 @@ ITensors.has_fermion_string(on::OpName, st::SiteType"FermCylK") = ITensors.has_f
 # zipped is 1 Ly-1 2 Ly-1 ...
 function unit_cell_terms(::Model"pipSCK"; Ly::Int64 = 4, tx = 1., ty = 1., Dx = 1., Dy = 1., mu = 0., order = :standard)
   k0 = 2*pi/Ly
-  opsum = OpSum{ComplexF64}()
-  #Easy part: tx
-  if tx != 0
-    for j in 1:Ly
-      opsum += -tx, "Cdag", j, "C", j+Ly
-      opsum += tx, "C", j, "Cdag", j+Ly
-    end
-  end
   if order == :standard
     positions = collect(0:Ly-1)
   else
@@ -156,16 +151,24 @@ function unit_cell_terms(::Model"pipSCK"; Ly::Int64 = 4, tx = 1., ty = 1., Dx = 
       end
     end
   end
-  println(positions)
   inv_positions = Dict{Int64, Int64}()
   for (idx, x) in enumerate(positions)
     inv_positions[x] = idx
   end
+
+  opsum = OpSum{ComplexF64}()
   #Easy, doing mu and ty at the same time
   if mu != 0 || ty != 0
     for j in 1:Ly
       k = positions[j]
       opsum += -mu -2*ty*cos(k*k0), "N", j
+    end
+  end
+  #Easy part: tx
+  if tx != 0
+    for j in 1:Ly
+      opsum += -tx, "Cdag", j, "C", j+Ly
+      opsum += tx, "C", j, "Cdag", j+Ly
     end
   end
   #Less easy: Dx c^†_{x, ky} c^†_{x+1, -ky}
@@ -188,8 +191,8 @@ function unit_cell_terms(::Model"pipSCK"; Ly::Int64 = 4, tx = 1., ty = 1., Dx = 
         opsum += 2*sin(k*k0)*Dy, "Cdag", idx1, "Cdag", idx2
         opsum += -2*sin(k*k0)*Dy, "C", idx1, "C", idx2
       else
-        opsum += -2*sin(k*k0)*Dy, "Cdag", idx1, "Cdag", idx2
-        opsum += 2*sin(k*k0)*Dy, "C", idx1, "C", idx2
+        opsum += -2*sin(k*k0)*Dy, "Cdag", idx2, "Cdag", idx1
+        opsum += 2*sin(k*k0)*Dy, "C", idx2, "C", idx1
       end
     end
   end

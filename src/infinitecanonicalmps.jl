@@ -331,7 +331,7 @@ function entropies(psi::InfiniteCanonicalMPS)
     ent = 0
     localC = psi.C[x]
     if isdiag(localC)
-      for s in 1:size(localC, 1)
+      for s in 1:min(size(localC)...)
         ent += -2 * localC[s, s]^2 * log(abs(localC[s, s]))
       end
     else
