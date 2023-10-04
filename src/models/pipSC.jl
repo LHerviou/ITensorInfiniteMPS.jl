@@ -25,7 +25,7 @@ end
 # p + ip SC. Several forms are possible
 # standard is 1 2 3 ... Ly in the y direction
 # zipped is 1 Ly 2 Ly-1 ...
-function unit_cell_terms(::Model"pipSC"; Ly::Int64 = 4, tx = 1., ty = 1., Dx = 1., Dy = 1. *1im, mu = 0., order = :standard)
+function unit_cell_terms(::Model"pipSC"; Ly::Int64 = 4, tx = 1., ty = 1., Dx = 1., Dy = 1.0 *1im, mu = 0., order = :standard)
   opsum = OpSum{promote_type(typeof(tx), typeof(ty), typeof(Dx), typeof(Dy), typeof(mu))}()
   #Easy part: tx
   if tx != 0
@@ -130,7 +130,7 @@ end
 # p + ip SC. Several forms are possible
 # standard is 1 2 3 ... Ly in the y direction
 # zipped is 1 Ly 2 Ly-1 ...
-function unit_cell_terms(::Model"pipSCK"; Ly::Int64 = 4, tx = 1., ty = 1., Dx = 1., Dy = 1.*1im, mu = 0., order = :standard)
+function unit_cell_terms(::Model"pipSCK"; Ly::Int64 = 4, tx = 1., ty = 1., Dx = 1., Dy = 1.0 *1im, mu = 0., order = :standard)
   opsum = OpSum{ComplexF64}()
   #Easy part: tx
   if tx != 0
