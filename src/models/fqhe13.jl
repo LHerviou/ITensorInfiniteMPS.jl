@@ -1,4 +1,4 @@
-optimize_coefficientsfunction ITensors.space(::SiteType"FermionK", pos::Int; p=1, q=1, conserve_momentum=true)
+function ITensors.space(::SiteType"FermionK", pos::Int; p=1, q=1, conserve_momentum=true)
   if !conserve_momentum
     return [QN("Nf", -p) => 1, QN("Nf", q - p) => 1]
   else
