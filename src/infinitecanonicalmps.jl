@@ -1,3 +1,7 @@
+function Base.deepcopy(M::InfiniteCanonicalMPS)
+	return InfiniteCanonicalMPS(deepcopy(M.AL), deepcopy(M.C), deepcopy(M.AR))
+end
+
 # TODO: Move to ITensors.jl
 function setval(qnval::ITensors.QNVal, val::Int)
   return ITensors.QNVal(ITensors.name(qnval), val, ITensors.modulus(qnval))
@@ -393,4 +397,20 @@ function check_unitarity(A::ITensor, link::Index; tol = 1e-10)
     return false
   end
   return true
+end
+
+
+function ITensors.replace_siteinds!(M::InfiniteCanonicalMPS, sites)
+	s = siteinds(M)
+	for j in 1:length(M)
+		replaceind!(M.AL[j], s[j], sites[j])
+		replaceind!(M.AR[j], s[j], sites[j])
+	end
+	return M
+end
+
+
+function ITensors.replace_siteinds(M::InfiniteCanonicalMPS, sites)
+	M2 = deepcopy(M)
+	return replace_siteinds!(M2, sites)
 end
