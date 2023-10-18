@@ -248,7 +248,7 @@ end
 
 
 function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMPO,ITensor}; solver_tol=1e-8, maxdim=20, cutoff=1e-10, α = 0., kwargs...)
-  issymmetric = get(kwargs, :issymmetric, true)
+  issymmetric = get(kwargs, :issymmetric, false)
   eager = get(kwargs, :eager, true)
   H_extension = get(kwargs, :MPO_extension, iDM.Hmpo)
   reduced_left_env = get(kwargs, :reduced_left_env, nothing)
@@ -384,7 +384,7 @@ function idmrg_step_with_noise_auxiliary_halfhalf(iDM::iDMRGStructure{InfiniteMP
     left_indices = commoninds(theta,  iDM.ψ.AL[start])
     right_indices = uniqueinds(theta, left_indices)
     newtags = tags(only(commoninds(iDM.ψ.AL[start], iDM.ψ.AL[start + 1])))
-    
+
     if α != 0
       if H_extension == iDM.Hmpo
           env = current_R

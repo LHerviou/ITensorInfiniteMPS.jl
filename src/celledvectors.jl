@@ -154,6 +154,9 @@ _setindex_cell1!(cv::CelledVector, val, n::Int) = (ITensors.data(cv)[n] = val)
 function getindex(cv::CelledVector, n::Int)
   cellₙ = cell(cv, n)
   siteₙ = cellindex(cv, n)
+  if cellₙ == 1
+    return _getindex_cell1(cv, siteₙ)
+  end
   return translatecell(cv.translator, _getindex_cell1(cv, siteₙ), cellₙ - 1)
 end
 

@@ -61,6 +61,11 @@ function shift_sites(opsum::OpSum, shift::Int)
   return shifted_opsum
 end
 
+function mult_flux(qn::QN, multipliers)
+	return QN( [(qn[n].name, qn[n].val * multipliers[n], (abs(qn[n].modulus) == 1 ? 1 : multipliers[n]) * qn[n].modulus) for n in 1:length(multipliers)]... )
+end
+
+
 function InfiniteSum{MPO}(opsum::OpSum, s::CelledVector; split = true)
   n = cell_length(s)
   nrange = 0 # Maximum operator support

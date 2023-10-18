@@ -364,3 +364,78 @@ function generate_Hamiltonian(coeff::Dict; global_factor=1, prec=1e-12)
   mpo = OpSum()
   return generate_Hamiltonian(mpo, coeff; global_factor=global_factor, prec=prec)
 end
+
+
+function default_FQHE_space(pos; conserve_momentum = true)
+	if !conserve_momentum
+      return [QN("Nf", 0) => 1, QN("Nf", 1) => 1]
+    else
+      return [
+        QN(("Nf", 0), ("NfMom", 0)) => 1,
+        QN(("Nf", 1), ("NfMom", pos)) => 1,
+      ]
+    end
+  end
+
+function generate_basic_FQHE_siteinds(N::Int64, occupation_pattern::Vector{Int64}; conserve_momentum = true, translator = nothing)
+	@assert length(occupation_pattern) == N
+
+	#Default space
+	starting_space = [Index(default_FQHE_space(pos; conserve_momentum); tags = "FermionK,Site,c=1,n=($pos)", dir = ITensors.Out) for pos in 1:N ]
+
+	total_shift = QN(("Nf", 0), ("NfMom", 0))
+	for j in 1:N
+		total_shift += starting_space[j].space[occupation_pattern[j]][1]
+	end
+
+	##Multipliers to get integer quantum numbers
+	multipliers = [total_shift[x].val == 0 ? 1 : abs(lcm(N, total_shift[x].val) ÷ total_shift[x].val) for x in 1:2]
+	multipliers = lcm(multipliers) * ones(Int64, 2)
+
+	#Adjusting the shifts for the multipliers
+  total_shift  = mult_flux(total_shift, multipliers)
+	per_site_shift = total_shift / N
+
+	#Shifts the densities to average to 0, and then K accordingly
+	shifts_on_site = QN[]
+	new_sf1 = Index[]
+	for j in 1:N
+		local_shift = QN(("Nf", per_site_shift[1].val), ("NfMom", j*per_site_shift[1].val))
+		total_shift -= local_shift
+		st = starting_space[j]
+		new_space = [mult_flux(st.space[x][1], multipliers) - local_shift => st.space[x][2] for x in 1:length(st.space)]
+		append!(new_sf1, [Index(new_space; dir = dir(st), tags = tags(st))] )
+		append!(shifts_on_site, [local_shift] )
+	end
+
+  #If the remaining per site shift is not integer, multiply again
+  new_mult = abs(lcm(total_shift[2].val, N) ÷ total_shift[2].val)
+  if new_mult != 1
+    multipliers = new_mult*ones(Int64, 2)
+    new_sf = Index[]
+    for j in 1:N
+  		st = new_sf1[j]
+  		new_space = [mult_flux(st.space[x][1], multipliers) => st.space[x][2] for x in 1:length(st.space)]
+  		append!(new_sf, [Index(new_space; dir = dir(st), tags = tags(st))] )
+  	end
+    new_sf1 = new_sf
+    total_shift = mult_flux(total_shift, multipliers)
+  end
+	@assert mod(total_shift[2].val, N) == 0
+
+  #Final shift
+  per_site_shift = total_shift / N
+	new_sf = Index[]
+	for j in 1:N
+		st = new_sf1[j]
+		new_space = [st.space[x][1] - per_site_shift => st.space[x][2] for x in 1:length(st.space)]
+		append!(new_sf, [Index(new_space; dir = dir(st), tags = tags(st))] )
+		shifts_on_site[j] += per_site_shift
+	end
+  
+  if isnothing(translator)
+	   return new_sf
+  else
+    return CelledVector(new_sf, translator)
+  end
+end

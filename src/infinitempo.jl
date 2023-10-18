@@ -252,8 +252,9 @@ function matrixITensorToITensor(
       end
     end
   end
+  T = promote_type(eltype.(H)...)
   Hf = ITensors.BlockSparseTensor(
-    eltype(elements[1]), undef, temp_block, (com_inds..., new_left_index, new_right_index)
+    T, undef, temp_block, (com_inds..., new_left_index, new_right_index)
   )
   for (n, b) in enumerate(temp_block)
     ITensors.blockview(Hf, b) .= elements[n]
@@ -323,11 +324,11 @@ function matrixITensorToITensor(H::Vector{ITensor}, com_inds; rev=false, kwargs.
       append!(elements, [T[b]])
     end
   end
-  #if length(elements) == 0
-    T = Float64
-  #else
-  #  T = eltype(elements[1])
-  #end
+
+  T = eltype(H[1])
+  if T == NDTensors.EmptyNumber
+    T = ComplexF64
+  end
   Hf = ITensors.BlockSparseTensor(
     T, undef, temp_block, (com_inds..., new_left_index)
   )

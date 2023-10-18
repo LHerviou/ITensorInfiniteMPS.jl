@@ -217,6 +217,13 @@ function advance_environments(H::iDMRGStructure{InfiniteMPOMatrix,Vector{ITensor
   end
 end
 
+function advance_environments(H::iDMRGStructure{InfiniteMPOMatrix,Vector{ITensor}}, n::Int64)
+  for j in 1:n
+    advance_environments(H)
+  end
+end
+
+
 function set_environments_defaultposition(
   H::iDMRGStructure{InfiniteMPOMatrix,Vector{ITensor}}
 )
@@ -395,7 +402,7 @@ function idmrg(
       ener, err = idmrg_step_with_noise(iDM; α = α, mid_chain,  kwargs...)
       ener, err = idmrg_step_with_noise(iDM; α = α, kwargs..., mid_chain = nsites(iDM)-mid_chain)
     end
-    append!(eners, ener)
+    append!(eners, real(ener))
     append!(errs, err)
     if measure_entropies
       append!(entrs, sum(entropies(iDM.ψ)) / nsites(iDM) )
