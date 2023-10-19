@@ -175,15 +175,21 @@ function block_QR_for_left_canonical(H::InfiniteMPOMatrix; left_env = nothing, m
   #CelledVector(ts, translator(new_H))
 end
 
-function check_convergence_left_canonical(newH, Ts; tol=1e-12)
+function check_convergence_left_canonical(newH, Ts; tol=1e-12, verbose = true)
   for x in 1:nsites(newH)
     li, ri = inds(Ts[x][2, 2])
     if dim(li)!=dim(ri)#li.space != ri.space
+      if verbose
+        println("Failed convergence due to dim change")
+      end
       return false
     end
   end
   for x in 1:nsites(newH)
     if norm(tr(newH[x][3, 2])) > tol
+      if verbose
+        println("Failing convergence of H[3, 2] by $(norm(tr(newH[x][3, 2])))")
+      end
       return false
     end
   end
@@ -192,13 +198,16 @@ function check_convergence_left_canonical(newH, Ts; tol=1e-12)
     Td = prime(Ts[x][2, 2], primed_ind)
     normed = norm(Ts[x][2, 2]*dag(Td) - denseblocks(δ(primed_ind, prime(dag(primed_ind)))))
     if normed > tol
+      if verbose
+        println("Failing convergence of T by $normed")
+      end
       return false
     end
   end
   return true
 end
 
-function left_canonical(H; tol=1e-12, max_iter=50, left_env = nothing, ψ = nothing, projection = -1,method = :edge_update, kwargs...)
+function left_canonical(H; tol=1e-12, max_iter=100, left_env = nothing, ψ = nothing, projection = -1,method = :edge_update, verbose = true, kwargs...)
   l1, l2 = size(H[1])
   if (l1 != 3 || l2 != 3)
     H = make_block(H)
@@ -222,14 +231,14 @@ function left_canonical(H; tol=1e-12, max_iter=50, left_env = nothing, ψ = noth
   end
   #newH, Rs, ts, left_env = block_QR_for_left_canonical(H, left_env)
   newH, Ts, left_env = block_QR_for_left_canonical(H; left_env, ψ, method )
-  if check_convergence_left_canonical(newH, Ts; tol)
+  if check_convergence_left_canonical(newH, Ts; tol, verbose)
     return newH, Ts, left_env
   end
   j = 1
   cont = true
   while j <= max_iter && cont
     newH, new_Ts, left_env = block_QR_for_left_canonical(newH; left_env, ψ, method)
-    cont = !check_convergence_left_canonical(newH, new_Ts; tol)
+    cont = !check_convergence_left_canonical(newH, new_Ts; tol, verbose)
     for j in 1:nsites(newH)
       Ts[j] = new_Ts[j] * Ts[j]
     end
@@ -342,15 +351,21 @@ function block_QR_for_right_canonical(H::InfiniteMPOMatrix; right_env = nothing,
   CelledVector(reverse(Ts), translator(new_H)), right_env
 end
 
-function check_convergence_right_canonical(newH, Ts; tol=1e-12)
+function check_convergence_right_canonical(newH, Ts; tol=1e-12, verbose = true)
   for x in 1:nsites(newH)
     li, ri = inds(Ts[x][2, 2])
     if dim(li) != dim(ri)#li.space != ri.space
+      if verbose
+        println("Failed convergence due to dim change")
+      end
       return false
     end
   end
   for x in 1:nsites(newH)
     if norm(tr(newH[x][2, 1])) > tol
+      if verbose
+        println("Failing convergence of H[2, 1] by $(norm(tr(newH[x][2, 1]))) ")
+      end
       return false
     end
   end
@@ -359,13 +374,16 @@ function check_convergence_right_canonical(newH, Ts; tol=1e-12)
     Td = prime(Ts[x][2, 2], primed_ind)
     normed = norm(Ts[x][2, 2]*dag(Td) - denseblocks(δ(primed_ind, prime(dag(primed_ind)))))
     if normed > tol
+      if verbose
+        println("Failing convergence of T by $(normed) ")
+      end
       return false
     end
   end
   return true
 end
 
-function right_canonical(H; tol=1e-12, max_iter=50, right_env = nothing, ψ = nothing, projection = -1,method = :edge_update, kwargs...)
+function right_canonical(H; tol=1e-12, max_iter=100, right_env = nothing, ψ = nothing, projection = -1,method = :edge_update, verbose, kwargs...)
   l1, l2 = size(H[1])
   if (l1 != 3 || l2 != 3)
     H = make_block(H)
@@ -392,7 +410,7 @@ function right_canonical(H; tol=1e-12, max_iter=50, right_env = nothing, ψ = no
     end
   end
   newH, Ts, right_env = block_QR_for_right_canonical(H; right_env, ψ, method)
-  if check_convergence_right_canonical(newH, Ts; tol)
+  if check_convergence_right_canonical(newH, Ts; tol, verbose)
     println("Right canonicalized in 1 iterations")
     return newH, Ts, right_env
   end
@@ -400,7 +418,7 @@ function right_canonical(H; tol=1e-12, max_iter=50, right_env = nothing, ψ = no
   cont = true
   while j <= max_iter && cont
     newH, new_Ts, right_env = block_QR_for_right_canonical(newH; right_env, ψ, method)
-    cont = !check_convergence_right_canonical(newH, new_Ts; tol)
+    cont = !check_convergence_right_canonical(newH, new_Ts; tol, verbose)
     for j in 1:nsites(newH)
       Ts[j] =  Ts[j] * new_Ts[j]
     end
@@ -414,7 +432,7 @@ function right_canonical(H; tol=1e-12, max_iter=50, right_env = nothing, ψ = no
   return newH, Ts, right_env
 end
 
-function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = nothing, kwargs...)
+function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = nothing, verbose = true, kwargs...)
   split_blocks = get(kwargs, :splitblocks, true)
   tol = get(kwargs, :tol, 1e-12)
 
@@ -437,14 +455,19 @@ function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = not
       right_env = new_right_env
     end
   end
-  HL, Tl1, L = left_canonical(smallH; left_env, kwargs...)
+  println("Starting left canonicalization")
+  HL, Tl1, L = left_canonical(smallH; left_env, verbose, kwargs...)
   if !isnothing(right_env)
     right_env = Tl1[nsites(H)] * right_env
   end
-  HR, Tr1, Rr = right_canonical(HL; right_env, kwargs...)
+
+  println("Starting right canonicalization")
+  HR, Tr1, Rr = right_canonical(HL; right_env, verbose, kwargs...)
   Lr = L * Tr1[1]
   left_env = deepcopy(Lr)
-  HL, Ts, Ll = left_canonical(HR; left_env, kwargs... )
+
+  println("Starting second left canonicalization")
+  HL, Ts, Ll = left_canonical(HR; left_env, verbose, kwargs... )
   Rl = Ts[nsites(HR)] * Rr
   #At this point, we hav<e HL[1]*Rs[1] = Rs[0] * HR[1] etc
   test_norm = maximum([norm(Ts[x][3, 2]) for x in 1:nsites(H)])
@@ -452,6 +475,7 @@ function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = not
     error("Ts should be 0 at this point, instead it is $test_norm")
   end
   #TODO ? replace this by matrix formmulation?
+  println("Starting truncation")
   Us = Vector{ITensor}(undef, nsites(H))
   Ss = Vector{ITensor}(undef, nsites(H))
   Vsd = Vector{ITensor}(undef, nsites(H))
