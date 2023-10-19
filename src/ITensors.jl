@@ -199,3 +199,36 @@ function ITensors.NDTensors.contraction_output(
 )
   return NDTensors.EmptyTensor(promote_type(eltype(A), eltype(B)), label)
 end
+
+
+function ITensors.directsum_projectors(indices; tags = tags(indices[1]), dir = dir(indices[1]))
+  fused_ind_space = typeof(indices[1].space)()
+  for idx in indices
+    dim(idx) == 0 && continue
+    append!(fused_ind_space, [idx.space]...)
+  end
+  fused_ind = Index(fused_ind_space; tags, dir)
+
+  projectors = ITensor[]
+  counter = 0
+  for j in 1:length(indices)
+    T = ITensor(Float64, fused_ind, dag(indices[j]) )
+    for k in 1:dim(indices[j])
+      T[counter + k, k] = 1.0
+    end
+    append!(projectors, [T] )
+    counter += dim(indices[j])
+  end
+  return fused_ind, projectors
+end
+
+
+function directsum_index(indices; tags = tags(indices[1]), dir = dir(indices[1]))
+  fused_ind_space = typeof(indices[1].space)()
+  for idx in indices
+    dim(idx) == 0 && continue
+    append!(fused_ind_space, [idx.space]...)
+  end
+  fused_ind = Index(fused_ind_space; tags, dir)
+  return fused_ind
+end

@@ -99,125 +99,313 @@ function InfiniteMPOMatrix(model::Model, s::CelledVector; kwargs...)
   return InfiniteMPOMatrix(model, s, translator(s); kwargs...)
 end
 
-function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; kwargs...)
-  split = get(kwargs, :split, true)
-  N = length(s)
-  println("Starting InfiniteSum MPO");
-  temp_H = InfiniteSum{MPO}(model, s; kwargs...)
-  println("Building the big matrix")
-  ls = CelledVector(
-    [Index(ITensors.trivial_space(s[n]), "Link,c=1,n=$n") for n in 1:N], translator
-  )
+function InfiniteMPOMatrix(model::Model, s::CelledVector, translator::Function; fuse = false, kwargs...)
+	split = get(kwargs, :split, true)
+	N = length(s)
+	println("Starting InfiniteSum MPO");
+	temp_H = InfiniteSum{MPO}(model, s; kwargs...)
+	println("Building the big matrix")
+	ls = CelledVector(
+	[Index(ITensors.trivial_space(s[n]), "Link,c=1,n=$n") for n in 1:N], translator
+	)
 
-  mpos = [Matrix{ITensor}(undef, 1, 1) for i in 1:N]
-  for j in 1:N
-    #For type stability
-    range_H = nrange(temp_H)[j]
-    Hmat = fill(
-      ITensor(eltype(temp_H[j][1]), dag(s[j]), prime(s[j])), range_H + 1, range_H + 1
-    )
-    #Hmat = Matrix{ITensor}(undef, range_H + 1, range_H + 1)
-    identity = op("Id", s[j])
-    Hmat[1, 1] = identity
-    Hmat[end, end] = identity
-    for n in 0:(range_H - 1)
-      idx = findfirst(x -> x == j, findsites(temp_H[j - n]; ncell=N))
-      if isnothing(idx)
-        Hmat[range_H + 1 - n, range_H - n] = identity
-      else
-        #Here, we split the local tensor into its different blocks
-        T = eltype(temp_H[j - n][idx])
-        temp_mat = convert_itensor_to_itensormatrix(
-          temp_H[j - n][idx];
-          leftdir=ITensors.In,
-          first=n == 0 ? true : false,
-          last=n == range_H - 1 ? true : false,
-          left_tags=tags(ls[j - 1]),
-          right_tags=tags(ls[j]),
-          leftindex=if idx > 1
-            only(commoninds(temp_H[j - n][idx], temp_H[j - n][idx - 1]))
-          else
-            nothing
-          end,
-          split=split
-        )
-        if size(temp_mat) == (3, 3)
-          @assert iszero(temp_mat[1, 2])
-          @assert iszero(temp_mat[1, 3])
-          @assert iszero(temp_mat[2, 3])
-          @assert temp_mat[1, 1] == identity
-          @assert temp_mat[3, 3] == identity
-          Hmat[range_H + 1 - n, range_H - n] = temp_mat[2, 2]
-          Hmat[end, range_H - n] = temp_mat[3, 2]
-          Hmat[range_H + 1 - n, 1] = temp_mat[2, 1]
-        elseif size(temp_mat) == (1, 3)
-          @assert n == 0
-          @assert temp_mat[1, 3] == identity
-          #@assert isempty(temp_mat[1, 1]) || iszero(temp_mat[1, 1])
-          Hmat[range_H + 1 - n, range_H - n] = temp_mat[1, 2]
-          Hmat[range_H + 1 - n, 1] = temp_mat[1, 1]
-        elseif size(temp_mat) == (3, 1)
-          @assert (range_H - n) == 1
-          @assert temp_mat[1, 1] == identity
-          #@assert isempty(temp_mat[3, 1]) || iszero(temp_mat[3, 1])
-            Hmat[range_H + 1 - n, range_H - n] = temp_mat[2, 1]
-          Hmat[end, range_H - n] += temp_mat[3, 1]  #LH This should do nothing #TODO check
-        else
-          error("Unexpected matrix form")
-        end
-      end
-    end
-    mpos[j] = Hmat
-    #mpos[j] += dense(Hmat) * setelt(ls[j-1] => total_dim) * setelt(ls[j] => total_dim)
-  end
-  #unify_indices and add virtual indices to the empty tensors
-  mpos = InfiniteMPOMatrix(mpos, translator)
-  println("Unification of indices")
-  for x in 1:N
-    sd = dag(s[x])
-    sp = prime(s[x])
-    left_inds = [
-      only(uniqueinds(mpos.data.data[x][j, 1], mpos.data.data[x][1, 1])) for j in 2:(size(mpos[x], 1) - 1)
-    ]
-    right_inds = [
-      only(uniqueinds(mpos.data.data[x][end, j], mpos.data.data[x][1, 1])) for j in 2:(size(mpos[x], 2) - 1)
-    ]
-    new_right_inds = [
-      dag(only(uniqueinds(mpos.data.data[mod1(x + 1, N)][j, 1], mpos.data.data[mod1(x + 1, N)][1, 1])) ) for
-      j in 2:(size(mpos[x], 2) - 1)
-    ]
-    if x == N
-      for j in 1:length(new_right_inds)
-        new_right_inds[j] = translatecell(translator, new_right_inds[j], 1)
-      end
-    end
-    for j in 2:size(mpos.data.data[x], 1)-1
-      for k in 2:(size(mpos.data.data[x], 2) - 1)
-        if !isempty(mpos[x][j, k])
-          replaceinds!(mpos.data.data[x][j, k], right_inds[k - 1] => new_right_inds[k - 1])
-        else
-          mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), left_inds[j-1], sd, sp, new_right_inds[k - 1])
-        end
-      end
-    end
-    for j in [1, size(mpos.data.data[x], 1)]
-      for k in 2:(size(mpos.data.data[x], 2) - 1)
-        if !isempty(mpos.data.data[x][j, k])
-          replaceinds!(mpos.data.data[x][j, k], right_inds[k - 1] => new_right_inds[k - 1])
-        else
-          mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), sd, sp, new_right_inds[k - 1])
-        end
-      end
-    end
-    for j in 2:size(mpos.data.data[x], 1)-1
-      for k in [1, size(mpos.data.data[x], 2)]
-        if isempty(mpos.data.data[x][j, k])
-          mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), left_inds[j-1], sd, sp)
-        end
-      end
-    end
-  end
-  return mpos
+	mpos = [Matrix{ITensor}(undef, 1, 1) for i in 1:N]
+	for j in 1:N
+		#For type stability
+		range_H = nrange(temp_H)[j]
+		Hmat = fill(
+		ITensor(eltype(temp_H[j][1]), dag(s[j]), prime(s[j])), range_H + 1, range_H + 1
+		)
+		#Hmat = Matrix{ITensor}(undef, range_H + 1, range_H + 1)
+		identity = op("Id", s[j])
+		Hmat[1, 1] = identity
+		Hmat[end, end] = identity
+		for n in 0:(range_H - 1)
+			idx = findfirst(x -> x == j, findsites(temp_H[j - n]; ncell=N))
+			if isnothing(idx)
+				Hmat[range_H + 1 - n, range_H - n] = identity
+			else
+				#Here, we split the local tensor into its different blocks
+				T = eltype(temp_H[j - n][idx])
+				temp_mat = convert_itensor_to_itensormatrix(
+				temp_H[j - n][idx];
+				leftdir=ITensors.In,
+				first=n == 0 ? true : false,
+				last=n == range_H - 1 ? true : false,
+				left_tags=tags(ls[j - 1]),
+				right_tags=tags(ls[j]),
+				leftindex=if idx > 1
+					only(commoninds(temp_H[j - n][idx], temp_H[j - n][idx - 1]))
+				else
+					nothing
+				end,
+				split=split
+				)
+				if size(temp_mat) == (3, 3)
+					@assert iszero(temp_mat[1, 2])
+					@assert iszero(temp_mat[1, 3])
+					@assert iszero(temp_mat[2, 3])
+					@assert temp_mat[1, 1] == identity
+					@assert temp_mat[3, 3] == identity
+					Hmat[range_H + 1 - n, range_H - n] = temp_mat[2, 2]
+					Hmat[end, range_H - n] = temp_mat[3, 2]
+					Hmat[range_H + 1 - n, 1] = temp_mat[2, 1]
+				elseif size(temp_mat) == (1, 3)
+					@assert n == 0
+					@assert temp_mat[1, 3] == identity
+					#@assert isempty(temp_mat[1, 1]) || iszero(temp_mat[1, 1])
+					Hmat[range_H + 1 - n, range_H - n] = temp_mat[1, 2]
+					Hmat[range_H + 1 - n, 1] = temp_mat[1, 1]
+				elseif size(temp_mat) == (3, 1)
+					@assert (range_H - n) == 1
+					@assert temp_mat[1, 1] == identity
+					#@assert isempty(temp_mat[3, 1]) || iszero(temp_mat[3, 1])
+					Hmat[range_H + 1 - n, range_H - n] = temp_mat[2, 1]
+					Hmat[end, range_H - n] += temp_mat[3, 1]  #LH This should do nothing #TODO check
+				else
+					error("Unexpected matrix form")
+				end
+			end
+		end
+		mpos[j] = Hmat
+		#mpos[j] += dense(Hmat) * setelt(ls[j-1] => total_dim) * setelt(ls[j] => total_dim)
+	end
+	#unify_indices and add virtual indices to the empty tensors
+	mpos = InfiniteMPOMatrix(mpos, translator)
+	if !fuse
+		println("Unification of indices")
+		for x in 1:N
+			sd = dag(s[x])
+			sp = prime(s[x])
+			left_inds = [
+			only(uniqueinds(mpos.data.data[x][j, 1], mpos.data.data[x][1, 1])) for j in 2:(size(mpos[x], 1) - 1)
+			]
+			right_inds = [
+			only(uniqueinds(mpos.data.data[x][end, j], mpos.data.data[x][1, 1])) for j in 2:(size(mpos[x], 2) - 1)
+			]
+			new_right_inds = [
+			dag(only(uniqueinds(mpos.data.data[mod1(x + 1, N)][j, 1], mpos.data.data[mod1(x + 1, N)][1, 1])) ) for
+			j in 2:(size(mpos[x], 2) - 1)
+			]
+			if x == N
+				for j in 1:length(new_right_inds)
+					new_right_inds[j] = translatecell(translator, new_right_inds[j], 1)
+				end
+			end
+			for j in 2:size(mpos.data.data[x], 1)-1
+				for k in 2:(size(mpos.data.data[x], 2) - 1)
+					if !isempty(mpos[x][j, k])
+						replaceinds!(mpos.data.data[x][j, k], right_inds[k - 1] => new_right_inds[k - 1])
+					else
+						mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), left_inds[j-1], sd, sp, new_right_inds[k - 1])
+					end
+				end
+			end
+			for j in [1, size(mpos.data.data[x], 1)]
+				for k in 2:(size(mpos.data.data[x], 2) - 1)
+					if !isempty(mpos.data.data[x][j, k])
+						replaceinds!(mpos.data.data[x][j, k], right_inds[k - 1] => new_right_inds[k - 1])
+					else
+						mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), sd, sp, new_right_inds[k - 1])
+					end
+				end
+			end
+			for j in 2:size(mpos.data.data[x], 1)-1
+				for k in [1, size(mpos.data.data[x], 2)]
+					if isempty(mpos.data.data[x][j, k])
+						mpos.data.data[x][j, k] = ITensor(eltype(mpos.data.data[x][j, k]), left_inds[j-1], sd, sp)
+					end
+				end
+			end
+		end
+	elseif false
+		println("Fusing the indices")
+		new_left = Index[]
+		new_right = Index[]
+		new_mpos = Matrix{ITensor}[]
+		@time for x in 1:N
+			T = mpos.data.data[x]
+
+			#Prepare indices
+			sd = dag(s[x])
+			sp = prime(s[x])
+			left_inds = [
+			only(uniqueinds(T[j, 1], T[1, 1])) for j in 2:(size(T, 1) - 1)
+			]
+			tag_left = x == 1 ? "Link,c=0,n=$N" : "Link,c=1,n=$(x-1)"
+			new_left_ind, projectors_left = ITensors.directsum_projectors(left_inds; tags = tag_left)
+			if x > 1
+				for j in 1:length(projectors_left)
+					replaceind!(projectors_left[j], new_left_ind, dag(new_right[end]))
+				end
+				new_left_ind = dag(new_right[end])
+			end
+			append!(new_left, [new_left_ind])
+
+			right_inds = [
+			only(uniqueinds(T[end, j], T[1, 1])) for j in 2:(size(T, 2) - 1)
+			]
+			new_right_ind, projectors_right = ITensors.directsum_projectors(right_inds; tags = "Link,c=1,n=$x")
+			if x == N
+				for j in 1:length(projectors_right)
+					replaceind!(projectors_right[j], new_right_ind, translatecell(translator, dag(new_left[1]), 1) )
+				end
+				new_right_ind = translatecell(translator, dag(new_left[1]), 1)
+			end
+			append!(new_right, [new_right_ind])
+
+			#Filling up the new tensor
+			new_tensor_matrix = Matrix{ITensor}(undef, 3, 3)
+			new_tensor_matrix[1, 1] = T[1, 1]
+			new_tensor_matrix[3, 3] = T[end, end]
+			new_tensor_matrix[1, 3] = T[1, end]
+			new_tensor_matrix[3, 1] = T[end, 1]
+			new_tensor_matrix[2, 3] = ITensor(eltype(T[1, 1]), sd, sp, new_left_ind)
+			new_tensor_matrix[1, 2] = ITensor(eltype(T[1, 1]), sd, sp, new_right_ind)
+
+			new_tensor_matrix[2, 1] = ITensor(eltype(T[1, 1]), sd, sp, new_left_ind)
+			for j in 2:size(T, 1)-1
+				isempty(T[j, 1]) && continue
+				iszero(T[j, 1]) && continue
+				new_tensor_matrix[2, 1] += projectors_left[j-1] * T[j, 1]
+			end
+			new_tensor_matrix[3, 2] = ITensor(eltype(T[1, 1]), sd, sp, new_right_ind)
+			for j in 2:size(T, 2)-1
+				isempty(T[end, j]) && continue
+				iszero(T[end, j]) && continue
+				new_tensor_matrix[3, 2] += projectors_right[j-1] * T[end, j]
+			end
+			new_tensor_matrix[2, 2] = ITensor(eltype(T[1, 1]), new_left_ind, sd, sp, new_right_ind)
+			for j in 2:size(T, 1)-1, k in 2:size(T, 2)-1
+				isempty(T[j, k]) && continue
+				iszero(T[j, k]) && continue
+				new_tensor_matrix[2, 2] += projectors_left[j-1] * T[j, k] * projectors_right[k-1]
+			end
+
+			append!(new_mpos, [new_tensor_matrix])
+		end
+		mpos = InfiniteMPOMatrix(new_mpos, translator)
+	else
+		println("Fusing the indices")
+		new_left = Index[]
+		new_right = Index[]
+		new_mpos = Matrix{ITensor}[]
+		@time for x in 1:N
+			T = mpos.data.data[x]
+
+			# #Prepare indices
+			sd = dag(s[x])
+			sp = prime(s[x])
+			left_inds = [
+			only(uniqueinds(T[j, 1], T[1, 1])) for j in 2:(size(T, 1) - 1)
+			]
+			tag_left = x == 1 ? "Link,c=0,n=$N" : "Link,c=1,n=$(x-1)"
+			new_left_ind, _ = ITensors.directsum_projectors(left_inds; tags = tag_left)
+			if x > 1
+				new_left_ind = dag(new_right[end])
+			else
+				new_left_ind = directsum_index(left_inds; tags = tag_left)
+			end
+			append!(new_left, [new_left_ind])
+
+			right_inds = [
+			only(uniqueinds(T[end, j], T[1, 1])) for j in 2:(size(T, 2) - 1)
+			]
+			if x == N
+				new_right_ind = translatecell(translator, dag(new_left[1]), 1)
+			else
+				new_right_ind = directsum_index(right_inds; tags = "Link,c=1,n=$x")
+			end
+			append!(new_right, [new_right_ind])
+
+			#Filling up the new tensor
+			new_tensor_matrix = Matrix{ITensor}(undef, 3, 3)
+			new_tensor_matrix[1, 1] = T[1, 1]
+			new_tensor_matrix[3, 3] = T[end, end]
+			new_tensor_matrix[1, 3] = T[1, end]
+			new_tensor_matrix[3, 1] = T[end, 1]
+			new_tensor_matrix[2, 3] = ITensor(eltype(T[1, 1]), new_left_ind, sd, sp )
+			new_tensor_matrix[1, 2] = ITensor(eltype(T[1, 1]), sd, sp, new_right_ind)
+
+			temp_Block = Block{3}[]
+			elements = []
+			counter = 0
+			for j in 2:size(T, 1)-1
+				if isempty(T[j, 1]) || iszero(T[j, 1])
+					counter += dim(left_inds[j-1])
+					continue
+				end
+				local_T = permute(T[j, 1], left_inds[j-1], sd, sp; allow_alias=true)
+				for b in eachnzblock(local_T)
+					append!(temp_Block, [ Block(b[1]+counter, b[2], b[3]) ])
+					append!(elements, [ local_T[b] ])
+				end
+				counter += dim(left_inds[j-1])
+			end
+		  temp = ITensors.BlockSparseTensor(
+			    eltype(T[1, 1]), undef, temp_Block, (new_left_ind, sd, sp)
+			  )
+			for (n, b) in enumerate(temp_Block)
+			  ITensors.blockview(temp, b) .= elements[n]
+			end
+			new_tensor_matrix[2, 1] = itensor(temp)
+
+			temp_Block = Block{3}[]
+			elements = []
+			counter = 0
+			for j in 2:size(T, 2)-1
+				if isempty(T[end, j]) || iszero(T[end, j])
+					counter += dim(right_inds[j-1])
+					continue
+				end
+				local_T = permute(T[end, j], sd, sp, right_inds[j-1]; allow_alias=true)
+				for b in eachnzblock(local_T)
+					append!(temp_Block, [ Block(b[1], b[2], b[3]+counter) ])
+					append!(elements, [ local_T[b] ])
+				end
+				counter += dim(right_inds[j-1])
+			end
+		  temp = ITensors.BlockSparseTensor(
+			    eltype(T[1, 1]), undef, temp_Block, (sd, sp, new_right_ind)
+			  )
+			for (n, b) in enumerate(temp_Block)
+			  ITensors.blockview(temp, b) .= elements[n]
+			end
+			new_tensor_matrix[3, 2] = itensor(temp)
+
+			temp_Block = Block{4}[]
+			elements = []
+			counter_j = 0
+			for j in 2:size(T, 1)-1
+				dim(left_inds[j-1]) == 0 && continue
+				counter_k = 0
+				for k in 2:size(T, 2)-1
+					if isempty(T[j, k]) || iszero(T[j, k])
+						counter_k += dim(right_inds[k-1])
+						continue
+					end
+					local_T = permute(T[j, k], left_inds[j-1], sd, sp, right_inds[k-1]; allow_alias=true)
+					for b in eachnzblock(local_T)
+						append!(temp_Block, [ Block(b[1]+counter_j, b[2], b[3], b[4]+counter_k) ])
+						append!(elements, [ local_T[b] ])
+					end
+					counter_k += dim(right_inds[k-1])
+				end
+				counter_j += dim(left_inds[j-1])
+			end
+			temp = ITensors.BlockSparseTensor(
+					eltype(T[1, 1]), undef, temp_Block, (new_left_ind, sd, sp, new_right_ind)
+				)
+			for (n, b) in enumerate(temp_Block)
+				ITensors.blockview(temp, b) .= elements[n]
+			end
+			new_tensor_matrix[2, 2] = itensor(temp)
+
+			append!(new_mpos, [new_tensor_matrix])
+		end
+		mpos = InfiniteMPOMatrix(new_mpos, translator)
+	end
+	return mpos
 end
 
 function ITensors.MPO(model::Model, s::Vector{<:Index}; kwargs...)
