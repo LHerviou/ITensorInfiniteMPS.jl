@@ -82,7 +82,11 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
   # this corresponds to d' = d - tr(d)/tr(1) * 1, R = 1 and t = tr(d)/tr(1)
   s = commoninds(H[1, 1], H[end, end])
   new_H = copy(H)
-  t1 = tr(new_H[3, 2]) / tr(new_H[3, 3])
+  if isempty(new_H[3, 2])
+    t1 = ITensor(uniqueinds(new_H[3, 2], s)...)
+  else
+    t1 = tr(new_H[3, 2]) / tr(new_H[3, 3])
+  end
   new_H[3, 2] = new_H[3, 2] - t1 * H[3, 3]
 
   kept_inds = commoninds(new_H[3, 2], new_H[2, 2]);
@@ -279,7 +283,11 @@ function block_QR_for_right_canonical(H::Matrix{ITensor})
   # this corresponds to d' = d - tr(d)/tr(1) * 1, R = 1 and t = tr(d)/tr(1)
   s = commoninds(H[1, 1], H[end, end])
   new_H = copy(H)
-  t1 = tr(new_H[2, 1]) / tr(H[1, 1])
+  if isempty(new_H[2, 1])
+    t1 = ITensor(uniqueinds(new_H[2, 1], s)...)
+  else
+    t1 = tr(new_H[2, 1]) / tr(H[1, 1])
+  end
   new_H[2, 1] .= new_H[2, 1] .- t1 * H[1, 1]
 
   kept_inds = commoninds(new_H[2, 1], new_H[2, 2]);
