@@ -86,8 +86,9 @@ function block_QR_for_left_canonical(H::Matrix{ITensor})
     t1 = ITensor(uniqueinds(new_H[3, 2], s)...)
   else
     t1 = tr(new_H[3, 2]) / tr(new_H[3, 3])
+    new_H[3, 2] = new_H[3, 2] - t1 * H[3, 3]
   end
-  new_H[3, 2] = new_H[3, 2] - t1 * H[3, 3]
+
 
   kept_inds = commoninds(new_H[3, 2], new_H[2, 2]);
   to_fuse_ind = only(uniqueinds(new_H[2, 2], kept_inds))
@@ -287,8 +288,9 @@ function block_QR_for_right_canonical(H::Matrix{ITensor})
     t1 = ITensor(uniqueinds(new_H[2, 1], s)...)
   else
     t1 = tr(new_H[2, 1]) / tr(H[1, 1])
+    new_H[2, 1] = new_H[2, 1] - t1 * H[1, 1]
   end
-  new_H[2, 1] .= new_H[2, 1] .- t1 * H[1, 1]
+
 
   kept_inds = commoninds(new_H[2, 1], new_H[2, 2]);
   to_fuse_ind = only(uniqueinds(new_H[2, 2], kept_inds))
