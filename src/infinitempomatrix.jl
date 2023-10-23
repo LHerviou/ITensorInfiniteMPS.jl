@@ -964,3 +964,10 @@ function Base.:+(A::InfiniteMPOMatrix, B::InfiniteMPOMatrix)
   #return new_MPOMatrices
   return InfiniteMPOMatrix(new_MPOMatrices, translator(A))
 end
+
+
+function replaceinds!(mat::Array{ITensor}, args...)
+  for s in 1:length(mat)
+    replaceinds!(mat[s], args)
+  end
+end
