@@ -381,7 +381,7 @@ function generate_basic_FQHE_siteinds(N::Int64, occupation_pattern::Vector{Int64
 	@assert length(occupation_pattern) == N
 
 	#Default space
-	starting_space = [Index(default_FQHE_space(pos; conserve_momentum); tags = "FermionK,Site,c=1,n=($pos)", dir = ITensors.Out) for pos in 1:N ]
+	starting_space = [Index(default_FQHE_space(pos; conserve_momentum); tags = "FermionK,Site,c=1,n=$(pos)", dir = ITensors.Out) for pos in 1:N ]
 
 	total_shift = QN(("Nf", 0), ("NfMom", 0))
 	for j in 1:N
@@ -409,17 +409,19 @@ function generate_basic_FQHE_siteinds(N::Int64, occupation_pattern::Vector{Int64
 	end
 
   #If the remaining per site shift is not integer, multiply again
-  new_mult = abs(lcm(total_shift[2].val, N) ÷ total_shift[2].val)
-  if new_mult != 1
-    multipliers = new_mult*ones(Int64, 2)
-    new_sf = Index[]
-    for j in 1:N
-  		st = new_sf1[j]
-  		new_space = [mult_flux(st.space[x][1], multipliers) => st.space[x][2] for x in 1:length(st.space)]
-  		append!(new_sf, [Index(new_space; dir = dir(st), tags = tags(st))] )
-  	end
-    new_sf1 = new_sf
-    total_shift = mult_flux(total_shift, multipliers)
+  if total_shift[2].val != 0
+    new_mult = abs(lcm(total_shift[2].val, N) ÷ total_shift[2].val)
+    if new_mult != 1
+      multipliers = new_mult*ones(Int64, 2)
+      new_sf = Index[]
+      for j in 1:N
+  		  st = new_sf1[j]
+  		  new_space = [mult_flux(st.space[x][1], multipliers) => st.space[x][2] for x in 1:length(st.space)]
+  		  append!(new_sf, [Index(new_space; dir = dir(st), tags = tags(st))] )
+  	  end
+      new_sf1 = new_sf
+      total_shift = mult_flux(total_shift, multipliers)
+    end
   end
 	@assert mod(total_shift[2].val, N) == 0
 
@@ -432,7 +434,7 @@ function generate_basic_FQHE_siteinds(N::Int64, occupation_pattern::Vector{Int64
 		append!(new_sf, [Index(new_space; dir = dir(st), tags = tags(st))] )
 		shifts_on_site[j] += per_site_shift
 	end
-  
+
   if isnothing(translator)
 	   return new_sf
   else
