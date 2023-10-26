@@ -966,8 +966,14 @@ function Base.:+(A::InfiniteMPOMatrix, B::InfiniteMPOMatrix)
 end
 
 
-function replaceinds!(mat::Array{ITensor}, args...)
+function ITensors.replaceind!(mat::Array{ITensor}, i1::Index, i2::Index)
   for s in 1:length(mat)
-    replaceinds!(mat[s], args)
+    replaceind!(mat[s], i1, i2)
+  end
+end
+
+function ITensors.replacetags!(mat::Array{ITensor}, tsold::String, tsnew::String; kwargs...)
+  for s in 1:length(mat)
+    replacetags!(mat[s], tsold, tsnew; kwargs...)
   end
 end
