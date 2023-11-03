@@ -254,7 +254,7 @@ function left_canonical(H; tol=1e-12, max_iter=100, left_env = nothing, ψ = not
   else
     println("Left canonicalized in $(j+1) iterations")
   end
-  return newH, Ts, left_env
+  return newH, Ts, left_env, cont
 end
 
 
@@ -439,7 +439,7 @@ function right_canonical(H; tol=1e-12, max_iter=100, right_env = nothing, ψ = n
   else
     println("Right canonicalized in $j iterations")
   end
-  return newH, Ts, right_env
+  return newH, Ts, right_env, cont
 end
 
 function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = nothing, verbose = true, kwargs...)
@@ -466,26 +466,22 @@ function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = not
     end
   end
   println("Starting left canonicalization")
-  HL, Tl1, L = left_canonical(smallH; left_env, verbose, kwargs...)
+  HL, Tl1, L, conv_L1 = left_canonical(smallH; left_env, verbose, kwargs...)
   if !isnothing(right_env)
     right_env = Tl1[nsites(H)] * right_env
   end
 
   println("Starting right canonicalization")
-  HR, Tr1, Rr = right_canonical(HL; right_env, verbose, kwargs...)
+  HR, Tr1, Rr, conv_R1 = right_canonical(HL; right_env, verbose, kwargs...)
   Lr = L * Tr1[1]
   left_env = deepcopy(Lr)
 
   println("Starting second left canonicalization")
-  HL, Ts, Ll = left_canonical(HR; left_env, verbose, kwargs... )
+  HL, Ts, Ll, conv_L2 = left_canonical(HR; left_env, verbose, kwargs... )
   Rl = Ts[nsites(HR)] * Rr
   #At this point, we hav<e HL[1]*Rs[1] = Rs[0] * HR[1] etc
-  if !check_convergence_left_canonical(HL, Ts; tol, verbose)
-    println("Left canonicalization was not sucessful, no truncation")
-    return (HL, Ll, Rl), (HR, Lr, Rr), Vector{ITensor}(undef, nsites(H))
-  end
-  if !check_convergence_right_canonical(HR, Tr1; tol, verbose)
-    println("Right canonicalization was not sucessful, no truncation")
+  if !(conv_L1 && conv_L2 && conv_R1)
+    println("Canonicalization was not sucessful, no truncation")
     return (HL, Ll, Rl), (HR, Lr, Rr), Vector{ITensor}(undef, nsites(H))
   end
 
