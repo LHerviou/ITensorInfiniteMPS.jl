@@ -480,7 +480,7 @@ function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = not
   HL, Ts, Ll, conv_L2 = left_canonical(HR; left_env, verbose, kwargs... )
   Rl = Ts[nsites(HR)] * Rr
   #At this point, we hav<e HL[1]*Rs[1] = Rs[0] * HR[1] etc
-  if !(conv_L1 && conv_L2 && conv_R1)
+  if conv_L1 || conv_L2 || conv_R1
     println("Canonicalization was not sucessful, no truncation")
     return (HL, Ll, Rl), (HR, Lr, Rr), Vector{ITensor}(undef, nsites(H))
   end
