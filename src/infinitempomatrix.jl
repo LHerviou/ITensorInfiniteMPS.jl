@@ -480,7 +480,7 @@ function compress_impo(H::InfiniteMPOMatrix; left_env = nothing, right_env = not
   HL, Ts, Ll = left_canonical(HR; left_env, verbose, kwargs... )
   Rl = Ts[nsites(HR)] * Rr
   #At this point, we hav<e HL[1]*Rs[1] = Rs[0] * HR[1] etc
-  if !check_convergence_left_canonical(HL, Tls; tol, verbose)
+  if !check_convergence_left_canonical(HL, Ts; tol, verbose)
     println("Left canonicalization was not sucessful, no truncation")
     return (InfiniteMPOMatrix(HL, translator(H)), Ll, Rl), (InfiniteMPOMatrix(HR, translator(H)), Lr, Rr), Vector{ITensor}(undef, nsites(H))
   end
