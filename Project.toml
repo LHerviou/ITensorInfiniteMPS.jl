@@ -18,7 +18,7 @@ SplitApplyCombine = "03a91e81-4c3e-53e1-a0a4-9c0c8f19dd66"
 
 [compat]
 Compat = "3, 4"
-HDF5 = "0.15, 0.16"
+HDF5 = "0.15, 0.16, 0.17"
 ITensors = "0.3.18"
 Infinities = "0.1"
 IterTools = "1"
